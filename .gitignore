@@ -1,0 +1,5 @@
+__pycache__/
+*.py[cod]
+opensplat-ls6.zip
+.DS_Store
+
