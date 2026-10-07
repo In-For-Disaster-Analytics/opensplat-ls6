@@ -46,6 +46,8 @@ RUN wget --https-only --no-verbose --output-document=/tmp/libtorch.zip "${LIBTOR
     && mv /opt/libtorch /opt/libtorch-cuda \
     && rm -f /tmp/libtorch.zip
 
+ENV LD_LIBRARY_PATH=/opt/libtorch-cuda/lib
+
 RUN cmake -S /tmp/OpenSplat -B /tmp/OpenSplat/build -GNinja \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_PREFIX_PATH=/opt/libtorch-cuda \
@@ -60,7 +62,7 @@ RUN cmake -S /tmp/OpenSplat -B /tmp/OpenSplat/build -GNinja \
     && rm -rf /tmp/OpenSplat
 
 ENV PATH=/opt/opensplat/bin:${PATH} \
-    LD_LIBRARY_PATH=/opt/libtorch-cuda/lib:/opt/opensplat/lib:${LD_LIBRARY_PATH}
+    LD_LIBRARY_PATH=/opt/libtorch-cuda/lib:/opt/opensplat/lib
 
 WORKDIR /workspace
 ENTRYPOINT ["/opt/opensplat/bin/opensplat"]
