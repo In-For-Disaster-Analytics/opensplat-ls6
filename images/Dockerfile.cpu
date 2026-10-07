@@ -1,0 +1,59 @@
+FROM ubuntu:22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG OPENSPLAT_REPOSITORY=https://github.com/WebODM/OpenSplat.git
+ARG OPENSPLAT_GIT_COMMIT=effe9e5dbe6d7f672ecd7f4c59a6c1cf879d916f
+ARG TORCH_VERSION=2.2.1
+ARG LIBTORCH_URL=https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.2.1%2Bcpu.zip
+ARG LIBTORCH_SHA256=
+
+LABEL org.opencontainers.image.source="https://github.com/In-For-Disaster-Analytics/opensplat-ls6" \
+      org.opencontainers.image.title="OpenSplat LS6 CPU" \
+      org.opencontainers.image.description="Self-contained CPU OpenSplat runtime for TACC LS6" \
+      org.opencontainers.image.version="${OPENSPLAT_GIT_COMMIT}"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       build-essential \
+       ca-certificates \
+       cmake \
+       git \
+       libopencv-dev \
+       ninja-build \
+       unzip \
+       wget \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tmp
+RUN git clone --no-tags --depth 1 "${OPENSPLAT_REPOSITORY}" OpenSplat \
+    && cd OpenSplat \
+    && git fetch --depth 1 origin "${OPENSPLAT_GIT_COMMIT}" \
+    && git checkout --detach "${OPENSPLAT_GIT_COMMIT}"
+
+RUN wget --https-only --no-verbose --output-document=/tmp/libtorch.zip "${LIBTORCH_URL}" \
+    && if [[ -n "${LIBTORCH_SHA256}" ]]; then \
+         echo "${LIBTORCH_SHA256}  /tmp/libtorch.zip" | sha256sum --check --strict; \
+       fi \
+    && unzip -q /tmp/libtorch.zip -d /opt \
+    && mv /opt/libtorch /opt/libtorch-cpu \
+    && rm -f /tmp/libtorch.zip
+
+RUN cmake -S /tmp/OpenSplat -B /tmp/OpenSplat/build -GNinja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_PREFIX_PATH=/opt/libtorch-cpu \
+      -DCMAKE_INSTALL_PREFIX=/opt/opensplat \
+      -DGPU_RUNTIME=CPU \
+      -DOPENSPLAT_USE_PCH=OFF \
+    && cmake --build /tmp/OpenSplat/build --parallel 2 \
+    && cmake --install /tmp/OpenSplat/build \
+    && /opt/opensplat/bin/opensplat --version \
+    && rm -rf /tmp/OpenSplat
+
+ENV PATH=/opt/opensplat/bin:${PATH} \
+    LD_LIBRARY_PATH=/opt/libtorch-cpu/lib:/opt/opensplat/lib:${LD_LIBRARY_PATH}
+
+WORKDIR /workspace
+ENTRYPOINT ["/opt/opensplat/bin/opensplat"]

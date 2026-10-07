@@ -258,6 +258,21 @@ No Tapis registration, upload, deployment, GitHub push, or production mutation i
 - **User feedback:** User approved implementation by saying “do it”; no external execution approval was given.
 - **Impact on implementation:** The spec is `Implemented`; the remaining acceptance gates are documented as open questions/follow-up rather than hidden in the local result.
 
+### 2026-10-07 - Build self-contained runtime images in CI
+
+- **Decision:** Build the CPU and CUDA OpenSplat artifacts in GitHub Actions from pinned source
+  and dependency inputs, publish them as GHCR OCI images, and convert them to SIFs on LS6.
+- **Reason:** LS6 rootless Apptainer cannot perform the privileged package-management and image
+  build steps required by the compiler/runtime build. The Tapis job must remain network-free and
+  self-contained at execution time.
+- **Alternatives rejected:** Running apt or sudo on LS6, building with `apptainer build --fakeroot`
+  on LS6, or downloading dependencies from the Tapis job.
+- **User feedback:** User explicitly requested the self-contained NodeODM-style approach and then
+  authorized publishing the GHCR image after the private/403 pull failure.
+- **Impact on implementation:** `.github/workflows/publish-images.yml` publishes immutable
+  commit-tagged CPU/CUDA images plus the stable `cpu` and `cuda` tags. LS6 staging converts those
+  tags to SIFs and records SHA256 values before Corral placement.
+
 ## User feedback / decisions
 
 - 2026-10-06: User specified the upstream WebODM/OpenSplat repository and requested an LS6 configuration patterned after the existing NodeODM configuration.
