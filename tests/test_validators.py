@@ -15,6 +15,14 @@ class ValidatorTests(unittest.TestCase):
         self.assertEqual(attrs["execSystemLogicalQueue"], "gpu-a100-small")
         self.assertEqual(manifest["notes"]["queueFilter"], ["gpu-a100-small", "gpu-a100", "gpu-a100-dev"])
 
+    def test_app_manifest_has_nonempty_argument_defaults(self):
+        manifest = json.loads((ROOT / "app.json").read_text(encoding="utf-8"))
+        app_args = manifest["jobAttributes"]["parameterSet"]["appArgs"]
+        self.assertTrue(app_args)
+        for app_arg in app_args:
+            self.assertIsInstance(app_arg["arg"], str)
+            self.assertTrue(app_arg["arg"].strip(), app_arg["name"])
+
     def test_valid_odx_project(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"

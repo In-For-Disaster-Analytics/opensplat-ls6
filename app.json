@@ -26,7 +26,7 @@
     "isMpi": false,
     "parameterSet": {
       "appArgs": [
-        {"name": "input_path", "description": "Absolute path to an ODX/OpenSfM project visible on LS6.", "inputMode": "INCLUDE_ON_DEMAND", "arg": ""},
+        {"name": "input_path", "description": "Absolute path to an ODX/OpenSfM project visible on LS6; replace the placeholder with the project path.", "inputMode": "INCLUDE_ON_DEMAND", "arg": "/var/www/data/PROJECT_ID"},
         {"name": "output_format", "description": "One output format per job: ply or splat.", "inputMode": "INCLUDE_ON_DEMAND", "arg": "ply"},
         {"name": "num_iterations", "description": "OpenSplat training iterations.", "inputMode": "INCLUDE_ON_DEMAND", "arg": "2000"},
         {"name": "profile", "description": "Runtime profile: cpu or cuda.", "inputMode": "INCLUDE_ON_DEMAND", "arg": "cpu"},
