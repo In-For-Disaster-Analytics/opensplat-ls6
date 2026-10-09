@@ -29,8 +29,10 @@ sha256sum "$SCRATCH/opensplat-ls6/images/"*.sif
 ```
 
 The final accepted SIFs must then be copied to the Corral locations in `app.json` by the
-approved staging workflow. The Tapis job itself only executes the SIF; it never runs apt,
-sudo, a compiler, or a network download.
+approved staging workflow. Reuse `/corral/utexas/BCS26030/NodeODX` and run the copy with
+effective group `G-829114`, matching the NodeODX deployment; the Tapis URI uses the corresponding
+`/corral-repl/utexas/BCS26030/NodeODX` replica path. The Tapis job itself only executes the SIF;
+it never runs apt, sudo, a compiler, or a network download.
 
 Required acceptance metadata:
 

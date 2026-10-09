@@ -15,11 +15,19 @@ def fail(message: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", required=True, type=Path)
+    parser.add_argument(
+        "--container-project",
+        type=Path,
+        help="container path where the project is bound; maps absolute image-list paths to the project",
+    )
     parser.add_argument("--max-images", required=True, type=int)
     parser.add_argument("--max-bytes", required=True, type=int)
     args = parser.parse_args()
 
     project = args.project.resolve(strict=True)
+    # Keep this path lexical: /var may be a host symlink (for example on macOS),
+    # while it is a real container path at runtime.
+    container_project = Path(args.container_project) if args.container_project else None
     if not project.is_dir():
         fail("project is not a directory")
 
@@ -58,7 +66,12 @@ def main() -> int:
     escaped = []
     for entry in entries:
         candidate = Path(entry)
-        resolved = candidate.resolve() if candidate.is_absolute() else (sfm_root / candidate).resolve()
+        if candidate.is_absolute() and container_project and (
+            candidate == container_project or container_project in candidate.parents
+        ):
+            resolved = (project / candidate.relative_to(container_project)).resolve()
+        else:
+            resolved = candidate.resolve() if candidate.is_absolute() else (sfm_root / candidate).resolve()
         try:
             resolved.relative_to(project)
         except ValueError:
@@ -88,6 +101,7 @@ def main() -> int:
         "referenced_image_bytes": total_bytes,
         "input_format": "odx-opensfm",
         "path_policy": "canonical-project-contained",
+        "container_project": str(container_project) if container_project else None,
     }, indent=2, sort_keys=True))
     return 0
 

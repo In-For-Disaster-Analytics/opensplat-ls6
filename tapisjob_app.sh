@@ -72,18 +72,30 @@ require_command apptainer
 JOB_ID=$(safe_job_id "${_tapisJobUUID:-${SLURM_JOB_ID:-local-job}}")
 WORK_ROOT=${_tapisJobWorkingDir:-$PWD}
 OUTPUT_DIR=${_tapisExecSystemOutputDir:-$WORK_ROOT/output}
-SCRATCH_ROOT=${SCRATCH:-$WORK_ROOT}
-RUN_DIR="$SCRATCH_ROOT/opensplat/$JOB_ID"
+WORK_DIR_BASE="$WORK_ROOT/opensplat_workdir"
+RUNTIME_DIR="$WORK_DIR_BASE/runtime"
+RUN_DIR="$WORK_DIR_BASE/runs/$JOB_ID"
 LOG_DIR="$RUN_DIR/logs"
-mkdir -p "$RUN_DIR" "$LOG_DIR" "$OUTPUT_DIR"
+mkdir -p "$RUN_DIR" "$LOG_DIR" "$RUNTIME_DIR/data" "$RUNTIME_DIR/tmp" "$RUNTIME_DIR/logs" "$OUTPUT_DIR"
 
 INPUT_CANONICAL=$(resolve_allowed_path "$INPUT_PATH")
+PROJECT_ID=${INPUT_CANONICAL##*/}
+STAGED_CONTAINER_PROJECT="/var/www/data/$PROJECT_ID"
+STAGED_PROJECT="$RUNTIME_DIR/data/$PROJECT_ID"
 [[ -f "$SIF_PATH" ]] || fail "configured SIF does not exist: $SIF_PATH"
 [[ -r "$SIF_PATH" ]] || fail "configured SIF is not readable: $SIF_PATH"
 
+STAGE_JSON="$RUN_DIR/stage.json"
+python3 "$SCRIPT_DIR/stage_project.py" \
+  --source "$INPUT_CANONICAL" \
+  --destination "$STAGED_PROJECT" \
+  --container-project "$STAGED_CONTAINER_PROJECT" \
+  > "$STAGE_JSON"
+
 PREFLIGHT_JSON="$RUN_DIR/preflight.json"
 python3 "$SCRIPT_DIR/validate_project.py" \
-  --project "$INPUT_CANONICAL" \
+  --project "$STAGED_PROJECT" \
+  --container-project "$STAGED_CONTAINER_PROJECT" \
   --max-images "${OPENSPLAT_MAX_IMAGES:-20000}" \
   --max-bytes "${OPENSPLAT_MAX_INPUT_BYTES:-1099511627776}" \
   > "$PREFLIGHT_JSON"
@@ -101,19 +113,19 @@ VERSION_FILE="$RUN_DIR/opensplat-version.txt"
 APPTAINER_ARGS=(exec --cleanenv --containall --no-home)
 if [[ "$PROFILE" == "cuda" ]]; then APPTAINER_ARGS+=(--nv); fi
 APPTAINER_ARGS+=(
-  --bind "$INPUT_CANONICAL:$INPUT_CANONICAL:ro"
+  --bind "$RUNTIME_DIR:/var/www:rw"
   --bind "$RUN_DIR:$RUN_DIR:rw"
 )
 
 OPEN_SPLAT_CMD=(
   apptainer "${APPTAINER_ARGS[@]}" "$SIF_PATH" "${OPENSPLAT_BINARY:-/opt/opensplat/bin/opensplat}"
-  "$INPUT_CANONICAL" --output "$OUTPUT_TMP" --num-iters "$NUM_ITERATIONS"
+  "$STAGED_CONTAINER_PROJECT" --output "$OUTPUT_TMP" --num-iters "$NUM_ITERATIONS"
 )
 if [[ "$PROFILE" == "cpu" ]]; then OPEN_SPLAT_CMD+=(--cpu); fi
 if [[ "$CENTER" == "1" ]]; then OPEN_SPLAT_CMD+=(--center); fi
 
 {
-  printf 'profile=%s\nformat=%s\niterations=%s\ninput=%s\n' "$PROFILE" "$OUTPUT_FORMAT" "$NUM_ITERATIONS" "$INPUT_CANONICAL"
+  printf 'profile=%s\nformat=%s\niterations=%s\nsource_input=%s\nstaged_input=%s\ncontainer_input=%s\n' "$PROFILE" "$OUTPUT_FORMAT" "$NUM_ITERATIONS" "$INPUT_CANONICAL" "$STAGED_PROJECT" "$STAGED_CONTAINER_PROJECT"
   apptainer "${APPTAINER_ARGS[@]}" "$SIF_PATH" "${OPENSPLAT_BINARY:-/opt/opensplat/bin/opensplat}" --version
 } > "$VERSION_FILE" 2>&1 || fail "OpenSplat version probe failed; see $VERSION_FILE"
 
@@ -133,6 +145,8 @@ python3 "$SCRIPT_DIR/validate_artifact.py" --format "$OUTPUT_FORMAT" --path "$PU
 mv -- "$PUBLISH_TMP" "$OUTPUT_FINAL"
 
 export OPENSPLAT_INPUT_CANONICAL="$INPUT_CANONICAL"
+export OPENSPLAT_INPUT_STAGED="$STAGED_PROJECT"
+export OPENSPLAT_INPUT_CONTAINER="$STAGED_CONTAINER_PROJECT"
 export OPENSPLAT_SIF_PATH="$SIF_PATH"
 export OPENSPLAT_SIF_SHA256=$(sha256sum -- "$SIF_PATH" | awk '{print $1}')
 export OPENSPLAT_TAPIS_JOB_UUID=${_tapisJobUUID:-}
@@ -170,6 +184,8 @@ manifest = {
     "num_iterations": int(iterations),
     "center": center == "1",
     "input_project": os.environ["OPENSPLAT_INPUT_CANONICAL"],
+    "staged_project": os.environ["OPENSPLAT_INPUT_STAGED"],
+    "container_project": os.environ["OPENSPLAT_INPUT_CONTAINER"],
     "allocation": os.environ.get("OPENSPLAT_ALLOCATION", ""),
     "queue": os.environ.get("OPENSPLAT_QUEUE", ""),
     "slurm": {
@@ -183,7 +199,7 @@ manifest = {
     "artifact_validation": json.load(open(artifact_path, encoding="utf-8")),
     "project_preflight": json.load(open(preflight_path, encoding="utf-8")),
     "runtime_version": pathlib.Path(version_path).read_text(encoding="utf-8"),
-    "cleanup": {"status": "preserved", "policy": "retain job-owned Scratch run directory for diagnostics"},
+    "cleanup": {"status": "preserved", "policy": "retain job-owned opensplat_workdir for diagnostics"},
 }
 with open(manifest_path, "w", encoding="utf-8") as handle:
     json.dump(manifest, handle, indent=2, sort_keys=True)

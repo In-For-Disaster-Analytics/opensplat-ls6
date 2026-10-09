@@ -273,6 +273,32 @@ No Tapis registration, upload, deployment, GitHub push, or production mutation i
   commit-tagged CPU/CUDA images plus the stable `cpu` and `cuda` tags. LS6 staging converts those
   tags to SIFs and records SHA256 values before Corral placement.
 
+### 2026-10-08 - Add guarded Tapis registration preparation
+
+- **Decision:** Add a local, dry-run-first `tapis/register_app.py` helper that checks the exact
+  app version and only creates it when both `--create` and `--confirm-external-write` are passed.
+- **Reason:** The package is now ready to be prepared for Tapis registration, but registration is
+  an external mutation and app versions should not be overwritten accidentally.
+- **Alternatives rejected:** Embedding registration in `build-zip.sh`, automatically uploading the
+  ZIP, or silently creating/updating the app during local validation.
+- **User feedback:** User requested proceeding with configuration on 2026-10-08; no separate
+  approval to upload, register, or submit an LS6 job was given.
+- **Impact on implementation:** The helper and README instructions are local-only. ZIP upload,
+  Tapis registration, SIF staging, and LS6 job submission remain explicit follow-up operations.
+
+### 2026-10-08 - Reuse the NodeODX Corral storage root
+
+- **Decision:** Store the OpenSplat ZIP and accepted CPU/CUDA SIFs under the quota-capable
+  `/corral/utexas/BCS26030/NodeODX` root, using `G-829114` as the effective upload group; map the
+  ZIP through `tapis://cloud.data/corral-repl/utexas/BCS26030/NodeODX/`.
+- **Reason:** The initial `/corral/utexas/BCS26030/OpenSplat` path is quota-blocked, while the
+  NodeODX deployment already established the working allocation, group, and Tapis replica path.
+- **Alternatives rejected:** Retrying the quota-exhausted PT2050 root or placing durable SIFs in
+  Scratch only.
+- **User feedback:** User explicitly requested using the existing ODX storage location.
+- **Impact on implementation:** `app.json`, `build-zip.sh`, and deployment documentation now use
+  the NodeODX storage convention; no NodeODX files or runtime behavior are changed.
+
 ## User feedback / decisions
 
 - 2026-10-06: User specified the upstream WebODM/OpenSplat repository and requested an LS6 configuration patterned after the existing NodeODM configuration.

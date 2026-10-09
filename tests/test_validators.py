@@ -55,6 +55,44 @@ class ValidatorTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("outside the project", result.stderr + result.stdout)
 
+    def test_stage_project_materializes_symlink_and_preserves_container_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            source_sfm = source / "opensfm"
+            image_store = root / "image-store"
+            source_sfm.mkdir(parents=True)
+            image_store.mkdir()
+            (image_store / "a.jpg").write_bytes(b"fake-image")
+            (source / "images").symlink_to(image_store, target_is_directory=True)
+            (source_sfm / "image_list.txt").write_text(
+                "/var/www/data/project/images/a.jpg\n", encoding="utf-8"
+            )
+            (source_sfm / "reconstruction.json").write_text(json.dumps([{
+                "cameras": {"cam": {}},
+                "shots": {"a.jpg": {}},
+                "points": {"p": {}},
+            }]), encoding="utf-8")
+            staged = root / "staged"
+
+            subprocess.run([
+                "python3", str(ROOT / "stage_project.py"),
+                "--source", str(source), "--destination", str(staged),
+                "--container-project", "/var/www/data/project",
+            ], check=True, capture_output=True, text=True)
+
+            self.assertTrue((staged / "images").is_dir())
+            self.assertFalse((staged / "images").is_symlink())
+            self.assertEqual(
+                (staged / "opensfm" / "image_list.txt").read_text(encoding="utf-8"),
+                "/var/www/data/project/images/a.jpg\n",
+            )
+            subprocess.run([
+                "python3", str(ROOT / "validate_project.py"), "--project", str(staged),
+                "--container-project", "/var/www/data/project",
+                "--max-images", "10", "--max-bytes", "1000",
+            ], check=True, capture_output=True, text=True)
+
     def test_artifact_validators(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

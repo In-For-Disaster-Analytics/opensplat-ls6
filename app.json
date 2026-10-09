@@ -6,7 +6,7 @@
   "enabled": true,
   "runtime": "ZIP",
   "runtimeVersion": "",
-  "containerImage": "tapis://cloud.data/corral-repl/utexas/BCS26030/OpenSplat/opensplat-ls6.zip",
+  "containerImage": "tapis://cloud.data/corral-repl/utexas/BCS26030/NodeODX/opensplat-ls6.zip",
   "jobType": "BATCH",
   "maxJobs": -1,
   "maxJobsPerUser": 4,
@@ -37,8 +37,8 @@
         {"name": "TAP Session Substring", "description": "TAP Functions require the substring 'tap_' in the Slurm job name.", "inputMode": "FIXED", "arg": "--job-name ${JobName}-tap_", "notes": {"isHidden": true}}
       ],
       "envVariables": [
-        {"key": "OPENSPLAT_CPU_SIF_PATH", "value": "/corral/utexas/BCS26030/OpenSplat/opensplat-cpu.sif", "description": "Pinned CPU OpenSplat SIF prepared for the acceptance run."},
-        {"key": "OPENSPLAT_CUDA_SIF_PATH", "value": "/corral/utexas/BCS26030/OpenSplat/opensplat-cuda.sif", "description": "Pinned CUDA OpenSplat SIF prepared for the GPU acceptance run."},
+        {"key": "OPENSPLAT_CPU_SIF_PATH", "value": "/corral/utexas/BCS26030/NodeODX/opensplat-cpu.sif", "description": "Pinned CPU OpenSplat SIF prepared for the acceptance run."},
+        {"key": "OPENSPLAT_CUDA_SIF_PATH", "value": "/corral/utexas/BCS26030/NodeODX/opensplat-cuda.sif", "description": "Pinned CUDA OpenSplat SIF prepared for the GPU acceptance run."},
         {"key": "OPENSPLAT_BINARY", "value": "/opt/opensplat/bin/opensplat", "description": "OpenSplat executable path inside the pinned SIF."},
         {"key": "OPENSPLAT_APP_ID", "value": "opensplat-ls6", "description": "Tapis app identifier recorded in the provenance manifest."},
         {"key": "OPENSPLAT_APP_VERSION", "value": "0.1.0", "description": "Tapis app version recorded in the provenance manifest."},
