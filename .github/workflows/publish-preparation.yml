@@ -1,6 +1,11 @@
 name: Publish candidate preparation image
 on:
   workflow_dispatch:
+  push:
+    branches: [deploy/webodm-preparation-20261028]
+    paths:
+      - images/Dockerfile.prepare
+      - .github/workflows/publish-preparation.yml
 permissions:
   contents: read
   packages: write
