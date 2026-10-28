@@ -37,8 +37,8 @@ def _load_dotenv() -> None:
     load_dotenv(REPO_ROOT.parent / ".env")
 
 
-def load_app_spec() -> dict:
-    with APP_JSON_PATH.open(encoding="utf-8") as handle:
+def load_app_spec(path=APP_JSON_PATH) -> dict:
+    with Path(path).open(encoding="utf-8") as handle:
         spec = json.load(handle)
     for key in ("id", "version", "runtime", "containerImage", "jobAttributes"):
         if not spec.get(key):
@@ -116,6 +116,7 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="required together with --create to permit Tapis mutation",
     )
+    parser.add_argument("--spec", type=Path, default=APP_JSON_PATH, help="Explicit candidate app specification")
     args = parser.parse_args(argv)
 
     if args.create and args.check:
@@ -124,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--confirm-external-write requires --create")
 
     _load_dotenv()
-    spec = load_app_spec()
+    spec = load_app_spec(args.spec)
 
     if args.dry_run:
         _print_spec(spec)

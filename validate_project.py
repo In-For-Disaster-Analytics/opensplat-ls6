@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from webodm_input import MANIFEST, load_input
 from pathlib import Path
 
 
@@ -25,6 +26,10 @@ def main() -> int:
     args = parser.parse_args()
 
     project = args.project.resolve(strict=True)
+    if (project / MANIFEST).exists():
+        data, files, total = load_input(project, args.max_images, args.max_bytes)
+        print(json.dumps({"input_format": "webodm-assets", "task_id": data["task_id"], "input_bytes": total, "image_count": len(data["images"])}))
+        return 0
     # Keep this path lexical: /var may be a host symlink (for example on macOS),
     # while it is a real container path at runtime.
     container_project = Path(args.container_project) if args.container_project else None

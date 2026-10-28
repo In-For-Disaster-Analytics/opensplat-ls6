@@ -43,11 +43,10 @@ echo "[opensplat-app-smoke] zip=${ZIP}"
 unzip -q "${ZIP}" -d "${APP_DIR}"
 [[ -x "${APP_DIR}/tapisjob_app.sh" ]] || chmod 0750 "${APP_DIR}/tapisjob_app.sh"
 
-export OPENSPLAT_CPU_SIF_PATH="${SIF}"
-export OPENSPLAT_CUDA_SIF_PATH="${SIF}"
+export OPENSPLAT_SIF_PATH="${SIF}"
 export OPENSPLAT_BINARY=/opt/opensplat/bin/opensplat
 export OPENSPLAT_APP_ID=opensplat-ls6
-export OPENSPLAT_APP_VERSION=0.1.0
+export OPENSPLAT_APP_VERSION=0.1.1
 export OPENSPLAT_SOURCE_COMMIT=effe9e5dbe6d7f672ecd7f4c59a6c1cf879d916f
 export OPENSPLAT_BUILD_METADATA="LS6 app-runtime smoke; CUDA SIF sha256=$(sha256sum "${SIF}" | awk '{print $1}')"
 export OPENSPLAT_IMPORT_PATH_ROOTS=/scratch/06659/wmobley
@@ -58,7 +57,7 @@ export _tapisJobWorkingDir="${RUN_DIR}"
 export _tapisExecSystemOutputDir="${OUTPUT_DIR}"
 export _tapisExecSystemLogicalQueue="${SLURM_JOB_PARTITION}"
 
-"${APP_DIR}/tapisjob_app.sh" "${PROJECT}" ply "${ITERATIONS}" cuda "${CENTER}"
+"${APP_DIR}/tapisjob_app.sh" "${PROJECT}" "${ITERATIONS}"
 
 echo '--- app smoke result ---'
 find "${OUTPUT_DIR}" -maxdepth 1 -type f -printf '%f %s bytes\n' | sort

@@ -1,6 +1,6 @@
 {
   "id": "opensplat-ls6",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenSplat Gaussian-splatting batch processing on TACC Lonestar6.",
   "owner": "${apiUserId}",
   "enabled": true,
@@ -27,27 +27,13 @@
     "parameterSet": {
       "appArgs": [
         {"name": "input_path", "description": "Absolute path to an ODX/OpenSfM project visible on LS6; replace the placeholder with the project path.", "inputMode": "INCLUDE_ON_DEMAND", "arg": "/var/www/data/PROJECT_ID"},
-        {"name": "output_format", "description": "One output format per job: ply or splat.", "inputMode": "INCLUDE_ON_DEMAND", "arg": "ply"},
-        {"name": "num_iterations", "description": "OpenSplat training iterations.", "inputMode": "INCLUDE_ON_DEMAND", "arg": "2000"},
-        {"name": "profile", "description": "Runtime profile: cpu or cuda.", "inputMode": "INCLUDE_ON_DEMAND", "arg": "cpu"},
-        {"name": "center", "description": "Set to 1 to center the output; default 0 preserves input CRS.", "inputMode": "INCLUDE_ON_DEMAND", "arg": "0"}
+        {"name": "num_iterations", "description": "OpenSplat training iterations.", "inputMode": "INCLUDE_ON_DEMAND", "arg": "2000"}
       ],
       "schedulerOptions": [
         {"name": "TACC Scheduler Profile", "description": "Scheduler profile for HPC clusters at TACC", "inputMode": "FIXED", "arg": "--tapis-profile tacc-apptainer", "notes": {"isHidden": true}},
         {"name": "TAP Session Substring", "description": "TAP Functions require the substring 'tap_' in the Slurm job name.", "inputMode": "FIXED", "arg": "--job-name ${JobName}-tap_", "notes": {"isHidden": true}}
       ],
-      "envVariables": [
-        {"key": "OPENSPLAT_CPU_SIF_PATH", "value": "/corral/utexas/BCS26030/NodeODX/opensplat-cpu.sif", "description": "Pinned CPU OpenSplat SIF prepared for the acceptance run."},
-        {"key": "OPENSPLAT_CUDA_SIF_PATH", "value": "/corral/utexas/BCS26030/NodeODX/opensplat-cuda.sif", "description": "Pinned CUDA OpenSplat SIF prepared for the GPU acceptance run."},
-        {"key": "OPENSPLAT_BINARY", "value": "/opt/opensplat/bin/opensplat", "description": "OpenSplat executable path inside the pinned SIF."},
-        {"key": "OPENSPLAT_APP_ID", "value": "opensplat-ls6", "description": "Tapis app identifier recorded in the provenance manifest."},
-        {"key": "OPENSPLAT_APP_VERSION", "value": "0.1.0", "description": "Tapis app version recorded in the provenance manifest."},
-        {"key": "OPENSPLAT_SOURCE_COMMIT", "value": "effe9e5dbe6d7f672ecd7f4c59a6c1cf879d916f", "description": "Pinned WebODM/OpenSplat source commit."},
-        {"key": "OPENSPLAT_BUILD_METADATA", "value": "see images/opensplat-pins.env and the accepted SIF manifest", "description": "Dependency/compiler/build metadata recorded in the provenance manifest."},
-        {"key": "OPENSPLAT_IMPORT_PATH_ROOTS", "value": "${_tapisJobWorkingDir}:${SCRATCH}:/corral/utexas/BCS26030/webodm/media", "description": "Colon-separated roots allowed for shared input projects."},
-        {"key": "OPENSPLAT_MAX_INPUT_BYTES", "value": "1099511627776", "description": "Maximum aggregate input size checked before execution."},
-        {"key": "OPENSPLAT_MAX_IMAGES", "value": "20000", "description": "Maximum image-list entries accepted by preflight."}
-      ],
+      "envVariables": [],
       "archiveFilter": {"includes": [], "excludes": [], "includeLaunchFiles": true}
     },
     "fileInputs": [],

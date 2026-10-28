@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+from webodm_input import MANIFEST, stage_input
 from pathlib import Path
 
 
@@ -45,7 +46,13 @@ def main() -> int:
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--destination", required=True, type=Path)
     parser.add_argument("--container-project", required=True, type=Path)
+    parser.add_argument("--max-images", type=int, default=20000)
+    parser.add_argument("--max-bytes", type=int, default=1099511627776)
     args = parser.parse_args()
+
+    if (args.source / MANIFEST).exists():
+        print(json.dumps(stage_input(args.source, args.destination, args.max_images, args.max_bytes)))
+        return 0
 
     source = args.source.resolve(strict=True)
     if not source.is_dir():

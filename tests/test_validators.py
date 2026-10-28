@@ -19,9 +19,29 @@ class ValidatorTests(unittest.TestCase):
         manifest = json.loads((ROOT / "app.json").read_text(encoding="utf-8"))
         app_args = manifest["jobAttributes"]["parameterSet"]["appArgs"]
         self.assertTrue(app_args)
+        self.assertEqual([item["name"] for item in app_args], ["input_path", "num_iterations"])
         for app_arg in app_args:
             self.assertIsInstance(app_arg["arg"], str)
             self.assertTrue(app_arg["arg"].strip(), app_arg["name"])
+
+    def test_app_manifest_uses_cuda_ply_defaults(self):
+        manifest = json.loads((ROOT / "app.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["version"], "0.1.1")
+        self.assertEqual(manifest["jobAttributes"]["parameterSet"]["envVariables"], [])
+
+    def test_runtime_refreshes_oci_image_into_sif(self):
+        launcher = (ROOT / "tapisjob_app.sh").read_text(encoding="utf-8")
+        self.assertIn("apptainer pull --force", launcher)
+        self.assertIn("docker://ghcr.io/in-for-disaster-analytics/opensplat-ls6:cpu", launcher)
+        self.assertIn("docker://ghcr.io/in-for-disaster-analytics/opensplat-ls6:cuda", launcher)
+        self.assertIn('REFRESH_SIF=${OPENSPLAT_REFRESH_SIF:-1}', launcher)
+        self.assertIn('mv -f -- "$PULL_TMP" "$SIF_PATH"', launcher)
+        self.assertIn('OUTPUT_TMP="$RUN_DIR/scene.tmp.${OUTPUT_FORMAT}"', launcher)
+        self.assertIn('NUM_ITERATIONS=${2:-${OPENSPLAT_NUM_ITERATIONS:-2000}}', launcher)
+        self.assertIn('PROFILE=${OPENSPLAT_PROFILE:-cuda}', launcher)
+        self.assertIn('OUTPUT_FORMAT=${OPENSPLAT_OUTPUT_FORMAT:-ply}', launcher)
+        self.assertIn('OPENSPLAT_IMPORT_PATH_ROOTS:-${SCRATCH:-/scratch}', launcher)
+        self.assertIn('APP_VERSION=${OPENSPLAT_APP_VERSION:-', launcher)
 
     def test_valid_odx_project(self):
         with tempfile.TemporaryDirectory() as tmp:

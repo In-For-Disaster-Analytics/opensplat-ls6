@@ -47,21 +47,22 @@ creates both formats.
 
 ## Build and local validation
 
-The ZIP contains the launcher and validators but not the OpenSplat SIF. CPU and CUDA SIFs are
-separate, pinned artifacts prepared for LS6. Build the package without uploading:
+The ZIP contains the launcher and validators but not the large OpenSplat runtime image. At job
+startup, the launcher pulls the selected mutable OCI tag (`:cpu` or `:cuda`) with Apptainer and
+materializes it as a SIF in a Scratch cache. Build the package without uploading:
 
 ```bash
 cd opensplat-ls6
 SKIP_UPLOAD=1 ./build-zip.sh
 ```
 
-The app manifest uses a GPU-backed queue so `profile=cuda` cannot silently run without an
-allocated NVIDIA device. The CPU profile is still available for functional smoke testing on
-that node; it is not a CPU performance baseline. The app defaults to the CPU SIF at
-`/corral/utexas/BCS26030/NodeODX/opensplat-cpu.sif` and uses the CUDA SIF for `profile=cuda`
-at `/corral/utexas/BCS26030/NodeODX/opensplat-cuda.sif`. Those files must be built and
-accepted on Linux/LS6 before a Tapis job can pass. This reuses the quota-capable Corral root
-used by the NodeODX app; uploads must run with effective group `G-829114`.
+The app manifest uses a GPU-backed queue and fixes the registered workflow to CUDA. The image
+build still publishes separate `:cpu` and `:cuda` tags for diagnostics and future CPU testing;
+the registered app pulls `docker://ghcr.io/in-for-disaster-analytics/opensplat-ls6:cuda`.
+The selected tag is refreshed on every job, then the resulting SIF is atomically placed under
+`$SCRATCH/opensplat-ls6/sifs/`. The job manifest records both the OCI reference and final SIF
+checksum. Set `OPENSPLAT_REFRESH_SIF=0` to reuse an existing cache, or set
+`OPENSPLAT_SIF_PATH` for an explicit diagnostic override.
 
 ## Direct LS6 CUDA smoke test
 
@@ -93,9 +94,11 @@ $SCRATCH/opensplat-ls6/test-runs/<SLURM_JOB_ID>/
 
 ## Tapis arguments
 
-The job arguments are, in order: `input_path`, `output_format` (`ply` or `splat`),
-`num_iterations` (default `2000`), `profile` (`cpu` or `cuda`), and `center` (`0` preserves
-the input CRS, `1` requests `--center`).
+The registered app exposes two arguments: `input_path` and `num_iterations` (default `2000`).
+The app runs the CUDA profile, writes a `.ply`, and preserves the input CRS (`center=0`). The
+launcher retains `OPENSPLAT_OUTPUT_FORMAT`, `OPENSPLAT_PROFILE`, and `OPENSPLAT_CENTER` as
+environment overrides for controlled local diagnostics, but they are not part of the public
+Tapis app contract.
 
 `OPENSPLAT_IMPORT_PATH_ROOTS` is an allowlist. The launcher canonicalizes the input path and
 rejects traversal or symlink escapes, then copies the project into the job working directory
@@ -118,12 +121,13 @@ The first two commands are non-mutating. The final command creates the exact app
 `app.json` and refuses to overwrite that version if it already exists. Set `TAPIS_USERNAME` and
 `TAPIS_PASSWORD`, or answer the prompts; credentials are not included in the ZIP.
 
-After registration, submit a Tapis job with the positional arguments
-`input_path`, `output_format`, `num_iterations`, `profile`, and `center`. The request must use
-the registered app's `appId`/`appVersion`, `execSystemId=ls6`, and a GPU-backed queue such as
-`gpu-a100-small`; the launcher then selects the CPU or CUDA SIF from `profile`. A submission
-example should use a real allowlisted LS6 project path and should be treated as a separate,
-explicitly approved external write.
+After registration, submit a Tapis job with the positional arguments `input_path` and
+`num_iterations`. The request must use the registered app's `appId`/`appVersion` (`0.1.1`),
+`execSystemId=ls6`, and a GPU-backed queue such as `gpu-a100-small`; the launcher pulls the
+CUDA OCI image and produces a `.ply` artifact.
+The compute node therefore needs outbound access to the OCI registry and enough Scratch space
+for the SIF. A submission example should use a real allowlisted LS6 project path and should be
+treated as a separate, explicitly approved external write.
 
 ## Acceptance record
 
@@ -134,3 +138,62 @@ output hashes, exit code, and cleanup result.
 
 No Tapis registration, upload, deployment, or production mutation is performed by the build
 script unless `SKIP_UPLOAD=0` is explicitly set in a separately approved environment.
+
+## Candidate: prepare WebODM assets on LS6
+
+The local candidate launcher also accepts a directory containing `webodm-input.json`.
+This has not been deployed or accepted on LS6. The existing registered app remains 0.1.1.
+The operator must create an immutable directory containing these files (photos must be
+materialized beneath it; escaping symlinks are rejected):
+
+```text
+input/
+  webodm-input.json
+  cameras.json
+  shots.geojson
+  cloud.laz
+  images/photo.jpg
+```
+
+```json
+{
+  "schema_version": 1,
+  "input_format": "webodm-assets",
+  "task_id": "WEBODM-TASK-UUID",
+  "cameras_path": "cameras.json",
+  "shots_path": "shots.geojson",
+  "point_cloud_path": "cloud.laz",
+  "images": [{"filename": "photo.jpg", "path": "images/photo.jpg"}],
+  "rtc_offset": [0, 0],
+  "image_size": 1920
+}
+```
+
+Use the actual RTC offset from the task's `odm_georeferencing/coords.txt` or
+`odm_georeferencing_model_geo.txt`, second line, first two values. Zero is correct only
+when the source task uses zero. Include every registered shot's JPEG. The point cloud
+must contain nonempty XYZ and RGB data in the same coordinate frame as the shots.
+`image_size=0` keeps original dimensions. Metadata and cloud paths are relative to input/.
+
+Provide `OPENSPLAT_PREPARE_SIF` and its exact `OPENSPLAT_PREPARE_SHA256`. The preparation
+image recipe is `images/Dockerfile.prepare`; it is separate from CUDA training. Its
+Linux build and LS6 compatibility require acceptance before publication. Preparation
+runs with source assets and application scripts mounted read-only, writes COLMAP files
+in job-local storage, and must finish before training begins. Default timeout is 7200
+seconds (`OPENSPLAT_PREPARE_SECONDS`); input/output byte limit defaults to 1 TiB
+(`OPENSPLAT_MAX_INPUT_BYTES`), with a separate per-output-file ceiling controlled by
+`OPENSPLAT_MAX_PREPARE_FILE_KIB`. Job filesystem quota remains necessary to bound peak
+Scratch usage. An input directory containing both manifest and OpenSfM reconstruction
+is rejected. Legacy OpenSfM jobs do not require a preparation SIF.
+
+The candidate package defaults to `opensplat-ls6-webodm-candidate.zip`; do not upload it
+over the deployed package, register over 0.1.1, or replace production image tags.
+Choose a new app version and version-specific package/image references for release.
+There is no automatic WebODM submission or result attachment in this milestone.
+After an approved LS6 run, upload the PLY through WebODM's Splats dialog and check
+alignment against the same task's point cloud. Logs/provenance record preparation,
+input checksums, RTC offset, and both preparation and training runtime identities.
+
+The candidate image build currently stops with Docker “No space left on device” before
+dependency solving. Converter tests pass in the existing local WebODM image; the new
+preparation image remains unverified.

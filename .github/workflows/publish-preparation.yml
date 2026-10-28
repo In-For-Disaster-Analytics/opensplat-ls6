@@ -1,0 +1,26 @@
+name: Publish candidate preparation image
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+jobs:
+  preparation:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/Dockerfile.prepare
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/in-for-disaster-analytics/opensplat-ls6:prepare-${{ github.sha }}
+          provenance: true
+          sbom: true

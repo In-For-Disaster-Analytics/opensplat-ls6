@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PACKAGE_NAME=${PACKAGE_NAME:-opensplat-ls6.zip}
+PACKAGE_NAME=${PACKAGE_NAME:-opensplat-ls6-webodm-candidate.zip}
 REMOTE_DIR=${REMOTE_DIR:-/corral/utexas/BCS26030/NodeODX}
 REMOTE_SSH_TARGET=${REMOTE_SSH_TARGET:-ls6}
 REMOTE_GROUP=${REMOTE_GROUP:-G-829114}
@@ -11,7 +11,7 @@ rm -f -- "$PACKAGE_NAME"
 python3 -m json.tool app.json >/dev/null
 python3 -m py_compile stage_project.py validate_project.py validate_artifact.py
 
-zip -q -r "$PACKAGE_NAME" app.json tapisjob_app.sh stage_project.py validate_project.py validate_artifact.py README.md README-ZIP.md images/opensplat-pins.env images/README.md \
+zip -q -r "$PACKAGE_NAME" app.json tapisjob_app.sh stage_project.py validate_project.py validate_artifact.py webodm_input.py prepare_webodm.py webodm_export.py validate_colmap.py WEBODM-LICENSE.txt THIRD-PARTY.md README.md README-ZIP.md images/opensplat-pins.env images/README.md \
   -x '*.pyc' -x '__pycache__/*'
 unzip -tq "$PACKAGE_NAME"
 

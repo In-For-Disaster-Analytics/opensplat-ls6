@@ -23,7 +23,7 @@ is_below_root() {
 }
 
 resolve_allowed_path() {
-  local candidate=$1 roots=${OPENSPLAT_IMPORT_PATH_ROOTS:-}
+  local candidate=$1 roots=${OPENSPLAT_IMPORT_PATH_ROOTS:-${SCRATCH:-/scratch}}
   [[ "$candidate" = /* ]] || fail "input_path must be an absolute path"
   [[ -n "$roots" ]] || fail "OPENSPLAT_IMPORT_PATH_ROOTS is empty"
 
@@ -45,10 +45,10 @@ resolve_allowed_path() {
 }
 
 INPUT_PATH=${1:-${OPENSPLAT_INPUT_PATH:-${_tapisExecSystemInputDir:-}}}
-OUTPUT_FORMAT=${2:-${OPENSPLAT_OUTPUT_FORMAT:-ply}}
-NUM_ITERATIONS=${3:-${OPENSPLAT_NUM_ITERATIONS:-2000}}
-PROFILE=${4:-${OPENSPLAT_PROFILE:-cpu}}
-CENTER=${5:-${OPENSPLAT_CENTER:-0}}
+NUM_ITERATIONS=${2:-${OPENSPLAT_NUM_ITERATIONS:-2000}}
+OUTPUT_FORMAT=${OPENSPLAT_OUTPUT_FORMAT:-ply}
+PROFILE=${OPENSPLAT_PROFILE:-cuda}
+CENTER=${OPENSPLAT_CENTER:-0}
 
 [[ -n "$INPUT_PATH" ]] || fail "input_path is required"
 case "$OUTPUT_FORMAT" in
@@ -56,13 +56,18 @@ case "$OUTPUT_FORMAT" in
   *) fail "output_format must be ply or splat" ;;
 esac
 case "$PROFILE" in
-  cpu) SIF_PATH=${OPENSPLAT_CPU_SIF_PATH:-} ;;
-  cuda) SIF_PATH=${OPENSPLAT_CUDA_SIF_PATH:-} ;;
+  cpu)
+    OCI_IMAGE=${OPENSPLAT_CPU_IMAGE:-docker://ghcr.io/in-for-disaster-analytics/opensplat-ls6:cpu}
+    SIF_BASENAME=opensplat-cpu.sif
+    ;;
+  cuda)
+    OCI_IMAGE=${OPENSPLAT_CUDA_IMAGE:-docker://ghcr.io/in-for-disaster-analytics/opensplat-ls6:cuda}
+    SIF_BASENAME=opensplat-cuda.sif
+    ;;
   *) fail "profile must be cpu or cuda" ;;
 esac
 [[ "$NUM_ITERATIONS" =~ ^[1-9][0-9]{0,5}$ ]] || fail "num_iterations must be an integer from 1 to 999999"
 [[ "$CENTER" == "0" || "$CENTER" == "1" ]] || fail "center must be 0 or 1"
-[[ -n "$SIF_PATH" ]] || fail "no SIF configured for profile=$PROFILE"
 
 require_command realpath
 require_command python3
@@ -71,6 +76,10 @@ require_command apptainer
 
 JOB_ID=$(safe_job_id "${_tapisJobUUID:-${SLURM_JOB_ID:-local-job}}")
 WORK_ROOT=${_tapisJobWorkingDir:-$PWD}
+APP_ID=${OPENSPLAT_APP_ID:-opensplat-ls6}
+APP_VERSION=${OPENSPLAT_APP_VERSION:-$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$SCRIPT_DIR/app.json")}
+export OPENSPLAT_APP_ID="$APP_ID"
+export OPENSPLAT_APP_VERSION="$APP_VERSION"
 OUTPUT_DIR=${_tapisExecSystemOutputDir:-$WORK_ROOT/output}
 WORK_DIR_BASE="$WORK_ROOT/opensplat_workdir"
 RUNTIME_DIR="$WORK_DIR_BASE/runtime"
@@ -78,18 +87,44 @@ RUN_DIR="$WORK_DIR_BASE/runs/$JOB_ID"
 LOG_DIR="$RUN_DIR/logs"
 mkdir -p "$RUN_DIR" "$LOG_DIR" "$RUNTIME_DIR/data" "$RUNTIME_DIR/tmp" "$RUNTIME_DIR/logs" "$OUTPUT_DIR"
 
+SIF_CACHE_DIR=${OPENSPLAT_SIF_CACHE_DIR:-${SCRATCH:-$WORK_ROOT}/opensplat-ls6/sifs}
+REFRESH_SIF=${OPENSPLAT_REFRESH_SIF:-1}
+SIF_SOURCE="oci:$OCI_IMAGE"
+
+if [[ -n "${OPENSPLAT_SIF_PATH:-}" ]]; then
+  SIF_PATH=$OPENSPLAT_SIF_PATH
+  SIF_SOURCE="explicit:$SIF_PATH"
+else
+  mkdir -p "$SIF_CACHE_DIR"
+  SIF_PATH="$SIF_CACHE_DIR/$SIF_BASENAME"
+  if [[ "$REFRESH_SIF" == "1" || ! -r "$SIF_PATH" ]]; then
+    PULL_TMP="$SIF_CACHE_DIR/.${SIF_BASENAME}.${JOB_ID}.tmp.sif"
+    log "pulling profile=$PROFILE image=$OCI_IMAGE destination=$SIF_PATH"
+    if ! apptainer pull --force "$PULL_TMP" "$OCI_IMAGE"; then
+      rm -f -- "$PULL_TMP"
+      fail "failed to pull OCI image for profile=$PROFILE: $OCI_IMAGE"
+    fi
+    [[ -s "$PULL_TMP" ]] || fail "Apptainer pull produced an empty SIF: $PULL_TMP"
+    mv -f -- "$PULL_TMP" "$SIF_PATH"
+  else
+    log "using cached profile=$PROFILE SIF=$SIF_PATH"
+  fi
+fi
+
 INPUT_CANONICAL=$(resolve_allowed_path "$INPUT_PATH")
 PROJECT_ID=${INPUT_CANONICAL##*/}
 STAGED_CONTAINER_PROJECT="/var/www/data/$PROJECT_ID"
 STAGED_PROJECT="$RUNTIME_DIR/data/$PROJECT_ID"
-[[ -f "$SIF_PATH" ]] || fail "configured SIF does not exist: $SIF_PATH"
-[[ -r "$SIF_PATH" ]] || fail "configured SIF is not readable: $SIF_PATH"
+[[ -f "$SIF_PATH" ]] || fail "SIF does not exist: $SIF_PATH"
+[[ -r "$SIF_PATH" ]] || fail "SIF is not readable: $SIF_PATH"
 
 STAGE_JSON="$RUN_DIR/stage.json"
 python3 "$SCRIPT_DIR/stage_project.py" \
   --source "$INPUT_CANONICAL" \
   --destination "$STAGED_PROJECT" \
   --container-project "$STAGED_CONTAINER_PROJECT" \
+  --max-images "${OPENSPLAT_MAX_IMAGES:-20000}" \
+  --max-bytes "${OPENSPLAT_MAX_INPUT_BYTES:-1099511627776}" \
   > "$STAGE_JSON"
 
 PREFLIGHT_JSON="$RUN_DIR/preflight.json"
@@ -100,7 +135,37 @@ python3 "$SCRIPT_DIR/validate_project.py" \
   --max-bytes "${OPENSPLAT_MAX_INPUT_BYTES:-1099511627776}" \
   > "$PREFLIGHT_JSON"
 
-OUTPUT_TMP="$RUN_DIR/scene.${OUTPUT_FORMAT}.tmp"
+PREPARATION_JSON="$RUN_DIR/preparation.json"
+if [[ -f "$STAGED_PROJECT/webodm-input.json" ]]; then
+  [[ "$CENTER" == "0" ]] || fail "WebODM preparation requires center=0"
+  [[ -n "${OPENSPLAT_PREPARE_SIF:-}" && -r "$OPENSPLAT_PREPARE_SIF" ]] || fail "WebODM inputs require OPENSPLAT_PREPARE_SIF"
+  [[ "${OPENSPLAT_PREPARE_SHA256:-}" =~ ^[a-f0-9]{64}$ ]] || fail "preparation SIF SHA256 is required"
+  [[ "$(sha256sum -- "$OPENSPLAT_PREPARE_SIF" | awk '{print $1}')" == "$OPENSPLAT_PREPARE_SHA256" ]] || fail "preparation SIF checksum mismatch"
+  PREPARE_SECONDS=${OPENSPLAT_PREPARE_SECONDS:-7200}
+  [[ "$PREPARE_SECONDS" =~ ^[1-9][0-9]{0,5}$ ]] || fail "invalid preparation timeout"
+  PREPARED_PROJECT="$WORK_DIR_BASE/colmap-$JOB_ID"
+  mkdir "$PREPARED_PROJECT"
+  # Bound output file size; preparation cannot modify source or launcher code.
+  (ulimit -f "${OPENSPLAT_MAX_PREPARE_FILE_KIB:-1073741824}"
+   timeout "$PREPARE_SECONDS" apptainer exec --cleanenv --containall --no-home \
+    --bind "$STAGED_PROJECT:/input:ro" \
+    --bind "$PREPARED_PROJECT:/prepared:rw" \
+    --bind "$SCRIPT_DIR:/app:ro" \
+    "$OPENSPLAT_PREPARE_SIF" python /app/prepare_webodm.py \
+      --project /input --output /prepared) > "$PREPARATION_JSON"
+  python3 "$SCRIPT_DIR/validate_colmap.py" "$PREPARED_PROJECT" \
+    --max-bytes "${OPENSPLAT_MAX_INPUT_BYTES:-1099511627776}"
+  export OPENSPLAT_PREPARATION_SIF_SHA256="$OPENSPLAT_PREPARE_SHA256"
+  # Training reads the exact prepared directory in its own coordinate frame.
+  TRAIN_PROJECT="$PREPARED_PROJECT"
+else
+  TRAIN_PROJECT="$STAGED_PROJECT"
+  printf '{}\n' > "$PREPARATION_JSON"
+fi
+export OPENSPLAT_PREPARATION_JSON="$PREPARATION_JSON"
+export OPENSPLAT_STAGE_JSON="$STAGE_JSON"
+
+OUTPUT_TMP="$RUN_DIR/scene.tmp.${OUTPUT_FORMAT}"
 OUTPUT_FINAL="$OUTPUT_DIR/opensplat-${JOB_ID}.${OUTPUT_FORMAT}"
 PUBLISH_TMP="$OUTPUT_DIR/.opensplat-${JOB_ID}.${OUTPUT_FORMAT}.tmp"
 MANIFEST_TMP="$RUN_DIR/manifest.json.tmp"
@@ -113,19 +178,20 @@ VERSION_FILE="$RUN_DIR/opensplat-version.txt"
 APPTAINER_ARGS=(exec --cleanenv --containall --no-home)
 if [[ "$PROFILE" == "cuda" ]]; then APPTAINER_ARGS+=(--nv); fi
 APPTAINER_ARGS+=(
-  --bind "$RUNTIME_DIR:/var/www:rw"
+  --bind "$RUNTIME_DIR:/var/www:ro"
+  --bind "$TRAIN_PROJECT:/training:ro"
   --bind "$RUN_DIR:$RUN_DIR:rw"
 )
 
 OPEN_SPLAT_CMD=(
   apptainer "${APPTAINER_ARGS[@]}" "$SIF_PATH" "${OPENSPLAT_BINARY:-/opt/opensplat/bin/opensplat}"
-  "$STAGED_CONTAINER_PROJECT" --output "$OUTPUT_TMP" --num-iters "$NUM_ITERATIONS"
+  "/training" --output "$OUTPUT_TMP" --num-iters "$NUM_ITERATIONS"
 )
 if [[ "$PROFILE" == "cpu" ]]; then OPEN_SPLAT_CMD+=(--cpu); fi
 if [[ "$CENTER" == "1" ]]; then OPEN_SPLAT_CMD+=(--center); fi
 
 {
-  printf 'profile=%s\nformat=%s\niterations=%s\nsource_input=%s\nstaged_input=%s\ncontainer_input=%s\n' "$PROFILE" "$OUTPUT_FORMAT" "$NUM_ITERATIONS" "$INPUT_CANONICAL" "$STAGED_PROJECT" "$STAGED_CONTAINER_PROJECT"
+  printf 'profile=%s\nformat=%s\niterations=%s\nsource_input=%s\nstaged_input=%s\ncontainer_input=%s\noci_image=%s\nsif_source=%s\nsif_cache_dir=%s\n' "$PROFILE" "$OUTPUT_FORMAT" "$NUM_ITERATIONS" "$INPUT_CANONICAL" "$STAGED_PROJECT" "$STAGED_CONTAINER_PROJECT" "$OCI_IMAGE" "$SIF_SOURCE" "$SIF_CACHE_DIR"
   apptainer "${APPTAINER_ARGS[@]}" "$SIF_PATH" "${OPENSPLAT_BINARY:-/opt/opensplat/bin/opensplat}" --version
 } > "$VERSION_FILE" 2>&1 || fail "OpenSplat version probe failed; see $VERSION_FILE"
 
@@ -147,6 +213,8 @@ mv -- "$PUBLISH_TMP" "$OUTPUT_FINAL"
 export OPENSPLAT_INPUT_CANONICAL="$INPUT_CANONICAL"
 export OPENSPLAT_INPUT_STAGED="$STAGED_PROJECT"
 export OPENSPLAT_INPUT_CONTAINER="$STAGED_CONTAINER_PROJECT"
+export OPENSPLAT_OCI_IMAGE="$OCI_IMAGE"
+export OPENSPLAT_SIF_SOURCE="$SIF_SOURCE"
 export OPENSPLAT_SIF_PATH="$SIF_PATH"
 export OPENSPLAT_SIF_SHA256=$(sha256sum -- "$SIF_PATH" | awk '{print $1}')
 export OPENSPLAT_TAPIS_JOB_UUID=${_tapisJobUUID:-}
@@ -193,7 +261,15 @@ manifest = {
         "node_list": os.environ.get("OPENSPLAT_SLURM_NODELIST", ""),
         "account": os.environ.get("OPENSPLAT_ALLOCATION", ""),
     },
-    "runtime": {"sif_path": os.environ.get("OPENSPLAT_SIF_PATH", ""), "sif_sha256": os.environ.get("OPENSPLAT_SIF_SHA256", "")},
+    "runtime": {
+        "oci_image": os.environ.get("OPENSPLAT_OCI_IMAGE", ""),
+        "sif_source": os.environ.get("OPENSPLAT_SIF_SOURCE", ""),
+        "sif_path": os.environ.get("OPENSPLAT_SIF_PATH", ""),
+        "sif_sha256": os.environ.get("OPENSPLAT_SIF_SHA256", ""),
+    },
+    "input_snapshot": json.load(open(os.environ["OPENSPLAT_STAGE_JSON"], encoding="utf-8")),
+    "preparation": json.load(open(os.environ["OPENSPLAT_PREPARATION_JSON"], encoding="utf-8")),
+    "preparation_sif_sha256": os.environ.get("OPENSPLAT_PREPARATION_SIF_SHA256", ""),
     "pins_file": "images/opensplat-pins.env",
     "output": {"path": os.path.abspath(output_path), "bytes": os.path.getsize(output_path), "sha256": sha256(output_path)},
     "artifact_validation": json.load(open(artifact_path, encoding="utf-8")),

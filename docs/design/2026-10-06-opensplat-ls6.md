@@ -62,11 +62,12 @@ CPU and NVIDIA builds are separate artifacts. The CPU profile uses `GPU_RUNTIME=
 The app manifest should expose only the controls needed for reproducible runs, initially:
 
 - input project path or staged input;
-- one output format per job (`ply` or `splat`; later formats only after validation). OpenSplat's documented CLI selects an output filename; the launcher must not claim that one invocation produces both formats. The acceptance suite runs separate jobs for `.ply` and `.splat`.
 - training iteration count;
-- optional center/resume controls supported by the pinned OpenSplat build;
-- CPU/GPU execution profile;
 - memory, walltime, and queue profile through Tapis app metadata rather than ad hoc shell overrides.
+
+The registered first app fixes the runtime contract to CUDA, `.ply`, and `center=0`; output
+format, profile, and center remain launcher environment overrides for controlled diagnostics,
+not public Tapis arguments.
 
 The first app is intentionally GPU-backed for a single queue-safe contract. A later CPU-only app may be registered if CPU throughput testing justifies a separate Tapis profile.
 
@@ -248,6 +249,19 @@ No Tapis registration, upload, deployment, GitHub push, or production mutation i
 - **Reason:** Local QA identified incomplete provenance and validators that could accept truncated or arbitrary outputs.
 - **Alternatives rejected:** Existence/non-empty checks alone and documenting provenance without emitting it per run.
 - **User feedback:** This is a QA-driven implementation refinement within the approved design.
+
+### 2026-10-09 - Simplify the public Tapis argument contract
+
+- **Decision:** Expose only `input_path` and `num_iterations` in app version `0.1.1`; fix the
+  registered runtime to CUDA, `.ply`, and `center=0`.
+- **Reason:** The accepted deployment path is GPU OpenSplat after NodeODX reconstruction, so
+  exposing unused output/profile/centering controls adds UI complexity without serving the
+  current workflow.
+- **Alternatives rejected:** Keeping five positional arguments or registering separate CPU and
+  output-format choices before the CUDA workflow is accepted.
+- **User feedback:** User approved the recommended two-argument contract.
+- **Impact on implementation:** `app.json`, the launcher argument mapping, smoke-test invocation,
+  documentation, and validation tests now use the two-argument contract.
 - **Impact on implementation:** The launcher and validators carry the acceptance evidence needed for later LS6 review.
 
 ### 2026-10-06 - Complete the isolated local implementation without external execution

@@ -1,0 +1,7 @@
+# Candidate CPU preparation runtime. Pin the resulting SIF SHA256 at deployment.
+FROM mambaorg/micromamba:2.0.5
+RUN micromamba install -y -n base -c conda-forge \
+    python=3.11 pdal=2.8 numpy=1.26.4 pillow=11.3.0 \
+    && micromamba clean --all --yes
+ENV PATH=/opt/conda/bin:$PATH
+RUN pdal --version && python -c "import numpy, PIL"
