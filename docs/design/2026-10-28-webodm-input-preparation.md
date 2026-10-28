@@ -1,7 +1,7 @@
 # Prepare WebODM task inputs in the OpenSplat LS6 app
 
 ## Status
-Implementing
+Implemented
 
 ## Objective
 Move WebODM-to-COLMAP preparation into the existing OpenSplat batch application, before training. Preserve the working OpenSfM input path.
@@ -80,3 +80,20 @@ User approved pursuing app-side conversion. This concrete input/runtime design i
 - Candidate image build attempted twice; Docker failed before dependency solving with “No space left on device”. No cleanup performed. Status remains Implementing pending runtime build validation.
 - No deployed app changes, upload, registration, LS6 job, commit, or push.
 - Remaining: Linux runtime build, real task path verification, LS6 training and alignment acceptance. Automatic WebODM submission remains deferred.
+
+### 2026-10-28 - Candidate deployment authorized
+- User requested deployment for testing and supplied a limited token for registration. Token is excluded from repository/artifacts.
+- Candidate branch deploy/webodm-preparation-20261028 pushed; production main and image tags preserved.
+- Preparation build 40746945717 succeeded, publishing prepare-7f4963054f70dff6ca58e860e80bb725570dd749 for linux/amd64.
+- Candidate ZIP installed at /corral/utexas/BCS26030/NodeODX/candidates/webodm-0.2.0/opensplat-ls6-webodm-candidate.zip; SHA256 08d38bf1e49b48217e29c3031c8cf37fa20cf6d53476f11dfef80912de9bef6f.
+- Isolated test snapshot has 38 registered JPEGs, 140573352 input bytes, and RTC offset [348892,6744240], from task e64b7d84-4a8a-42dc-a592-a1fd413942e1. Source task untouched.
+- SIF staging submitted as Slurm job 3539148; CPU development queue selected because no GPU is needed to stage/verify the runtime. App candidate 0.2.0 registration awaits its verified SIF checksum.
+
+### 2026-10-28 - Candidate deployed and conversion accepted on LS6
+- Candidate opensplat-ls6/0.2.0 created and read back successfully. Existing 0.1.1 remains enabled with its original package and 240-minute limit. Candidate limit is 30 minutes, 100 iterations by default, one job per user, and a narrow input allowlist.
+- Preparation SIF on Corral: candidates/webodm-0.2.0/prepare-node.sif, SHA256 df64554a7481bfc1bd77521a2c4f9cd0f8ae505e51dcf3b7779eb059d396566a. LS6 probes passed: PDAL 2.8.4, NumPy 1.26.4, Pillow 11.3.0.
+- Scratch extraction was slow. Repeated extraction using node-local /tmp within the same allocation succeeded; final SIF retained on shared storage. Direct node SSH host-key verification failed and was not bypassed; diagnostics and execution used Slurm instead.
+- Real-data preparation passed under allocation 3539148: 38 images resized to maximum 1920, 25665 training points, 11.019 seconds conversion, correct preserved RTC offset. Report: /scratch/06659/wmobley/opensplat-ls6/candidates/webodm-0.2.0/verification-3539148/preparation.json. Generated COLMAP validator passed.
+- Redundant queued job 3539150 and superseded slow extraction job 3539148 canceled after successful replacement verification. No training submitted, no model attached, no production task mutation.
+- Registration token used only for app lookup/creation/readback; temporary local token file removed.
+- Implementation deviation: preparation runtime is a separate minimal conda-forge image, verified on LS6, rather than extending the CUDA image. Automatic submission and training/alignment acceptance remain follow-up milestones.

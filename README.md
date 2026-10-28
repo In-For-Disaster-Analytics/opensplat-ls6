@@ -142,7 +142,7 @@ script unless `SKIP_UPLOAD=0` is explicitly set in a separately approved environ
 ## Candidate: prepare WebODM assets on LS6
 
 The local candidate launcher also accepts a directory containing `webodm-input.json`.
-This has not been deployed or accepted on LS6. The existing registered app remains 0.1.1.
+Candidate app 0.2.0 is deployed for testing; preparation passed on LS6. App 0.1.1 remains available.
 The operator must create an immutable directory containing these files (photos must be
 materialized beneath it; escaping symlinks are rejected):
 
@@ -176,8 +176,7 @@ must contain nonempty XYZ and RGB data in the same coordinate frame as the shots
 `image_size=0` keeps original dimensions. Metadata and cloud paths are relative to input/.
 
 Provide `OPENSPLAT_PREPARE_SIF` and its exact `OPENSPLAT_PREPARE_SHA256`. The preparation
-image recipe is `images/Dockerfile.prepare`; it is separate from CUDA training. Its
-Linux build and LS6 compatibility require acceptance before publication. Preparation
+image recipe is `images/Dockerfile.prepare`; it is separate from CUDA training. Its Linux build and LS6 preparation checks passed; training acceptance remains pending. Preparation
 runs with source assets and application scripts mounted read-only, writes COLMAP files
 in job-local storage, and must finish before training begins. Default timeout is 7200
 seconds (`OPENSPLAT_PREPARE_SECONDS`); input/output byte limit defaults to 1 TiB
@@ -194,6 +193,31 @@ After an approved LS6 run, upload the PLY through WebODM's Splats dialog and che
 alignment against the same task's point cloud. Logs/provenance record preparation,
 input checksums, RTC offset, and both preparation and training runtime identities.
 
-The candidate image build currently stops with Docker “No space left on device” before
-dependency solving. Converter tests pass in the existing local WebODM image; the new
-preparation image remains unverified.
+The local Docker build ran out of space; GitHub Actions built the image successfully,
+and LS6 preparation verification passed.
+
+
+## Isolated deployment candidate (2026-10-28)
+
+Candidate app spec: `app.candidate.json`, version 0.2.0. The deployed 0.1.1 app
+is retained. Preparation image build:
+https://github.com/In-For-Disaster-Analytics/opensplat-ls6/actions/runs/40746945717
+
+The preparation image published successfully for linux/amd64 with OCI digest
+`sha256:4c011c3e8b6e7c0a18e0a89b69d6e7d2c64b3df29e147e3599744b130a18e4c1`.
+SIF conversion/verification runs on an LS6 compute node, following TACC policy.
+Do not run Apptainer on login nodes.
+
+Registration accepts `TAPIS_ACCESS_TOKEN` in the process environment, or the existing
+username/password flow. Tokens must never be committed or included in ZIP inputs.
+Use `python3 tapis/register_app.py --spec app.candidate.json --check` before
+`--create --confirm-external-write`. Register only after its SIF SHA256 has been
+filled from the verified runtime; the preparation launcher rejects missing hashes.
+
+
+Candidate 0.2.0 is now registered. LS6 preparation was verified on a 38-photo
+snapshot: 25,665 training points, about 11 seconds conversion at 1920 image size.
+This supersedes the earlier unverified-runtime note. The candidate preparation SIF
+SHA256 is `df64554a7481bfc1bd77521a2c4f9cd0f8ae505e51dcf3b7779eb059d396566a`.
+Existing 0.1.1 remains available. Training and visual alignment have not yet been
+accepted; no automatic WebODM submission is provided.

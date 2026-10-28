@@ -55,7 +55,6 @@ or Tapis ZIP until the hashes and fixture results have been reviewed.
 `Dockerfile.prepare` isolates PDAL/Python preparation from CUDA/LibTorch training.
 It does not start Django or require WebODM credentials. The current local WebODM image
 was used only as a test harness (PDAL 2.3.0, NumPy 1.26.2, Pillow 11.3.0). The candidate
-recipe requests PDAL 2.8, Python 3.11, NumPy 1.26.4, and Pillow 11.3.0; dependency solving,
-Linux build, and LS6 acceptance must pass before deployment. Record the resulting
+recipe requests PDAL 2.8, Python 3.11, NumPy 1.26.4, and Pillow 11.3.0; the Linux build and LS6 preparation probes have passed. Training acceptance remains pending. Record the resulting
 image digest and SIF SHA256; pass the latter to the launcher. No images are published
 by local preparation tests.

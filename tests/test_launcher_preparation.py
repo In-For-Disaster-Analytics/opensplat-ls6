@@ -1,5 +1,6 @@
 import hashlib
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -10,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class LauncherTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("timeout"), "GNU timeout required by Linux launcher")
     def test_preparation_failure_prevents_training(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

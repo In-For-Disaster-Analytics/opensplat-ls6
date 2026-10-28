@@ -1,0 +1,121 @@
+{
+  "id": "opensplat-ls6",
+  "version": "0.2.0",
+  "description": "Candidate WebODM asset preparation plus OpenSplat CUDA training on LS6.",
+  "owner": "${apiUserId}",
+  "enabled": true,
+  "runtime": "ZIP",
+  "runtimeVersion": "",
+  "containerImage": "tapis://cloud.data/corral-repl/utexas/BCS26030/NodeODX/candidates/webodm-0.2.0/opensplat-ls6-webodm-candidate.zip",
+  "jobType": "BATCH",
+  "maxJobs": -1,
+  "maxJobsPerUser": 1,
+  "strictFileInputs": false,
+  "jobAttributes": {
+    "description": null,
+    "dynamicExecSystem": false,
+    "execSystemConstraints": null,
+    "execSystemId": "ls6",
+    "execSystemExecDir": "${JobWorkingDir}",
+    "execSystemInputDir": "${JobWorkingDir}/inputs",
+    "execSystemOutputDir": "${JobWorkingDir}/output",
+    "execSystemLogicalQueue": "gpu-a100-small",
+    "archiveSystemId": "cloud.data",
+    "archiveSystemDir": "HOST_EVAL($SCRATCH)/tapis-jobs-archive/${JobCreateDate}/${JobName}-${JobUUID}",
+    "archiveOnAppError": true,
+    "isMpi": false,
+    "parameterSet": {
+      "appArgs": [
+        {
+          "name": "input_path",
+          "description": "Absolute LS6-visible OpenSfM directory or immutable WebODM manifest directory.",
+          "inputMode": "INCLUDE_ON_DEMAND",
+          "arg": "/scratch/06659/wmobley/opensplat-ls6/candidates/webodm-0.2.0/input"
+        },
+        {
+          "name": "num_iterations",
+          "description": "OpenSplat training iterations.",
+          "inputMode": "INCLUDE_ON_DEMAND",
+          "arg": "100"
+        }
+      ],
+      "schedulerOptions": [
+        {
+          "name": "TACC Scheduler Profile",
+          "description": "Scheduler profile for HPC clusters at TACC",
+          "inputMode": "FIXED",
+          "arg": "--tapis-profile tacc-apptainer",
+          "notes": {
+            "isHidden": true
+          }
+        },
+        {
+          "name": "TAP Session Substring",
+          "description": "TAP Functions require the substring 'tap_' in the Slurm job name.",
+          "inputMode": "FIXED",
+          "arg": "--job-name ${JobName}-tap_",
+          "notes": {
+            "isHidden": true
+          }
+        }
+      ],
+      "envVariables": [
+        {
+          "key": "OPENSPLAT_APP_VERSION",
+          "value": "0.2.0",
+          "inputMode": "FIXED"
+        },
+        {
+          "key": "OPENSPLAT_SIF_PATH",
+          "value": "/scratch/06659/wmobley/opensplat-ls6/sifs/opensplat-cuda.sif",
+          "inputMode": "FIXED"
+        },
+        {
+          "key": "OPENSPLAT_PREPARE_SIF",
+          "value": "/corral/utexas/BCS26030/NodeODX/candidates/webodm-0.2.0/prepare-node.sif",
+          "inputMode": "FIXED"
+        },
+        {
+          "key": "OPENSPLAT_IMPORT_PATH_ROOTS",
+          "value": "/scratch/06659/wmobley/opensplat-ls6/candidates/webodm-0.2.0/input",
+          "inputMode": "FIXED"
+        },
+        {
+          "key": "OPENSPLAT_PREPARE_SHA256",
+          "value": "df64554a7481bfc1bd77521a2c4f9cd0f8ae505e51dcf3b7779eb059d396566a",
+          "inputMode": "FIXED"
+        }
+      ],
+      "archiveFilter": {
+        "includes": [],
+        "excludes": [],
+        "includeLaunchFiles": true
+      }
+    },
+    "fileInputs": [],
+    "fileInputArrays": [],
+    "nodeCount": 1,
+    "coresPerNode": 16,
+    "memoryMB": 30720,
+    "maxMinutes": 30,
+    "subscriptions": [],
+    "tags": []
+  },
+  "tags": [
+    "portalName: ALL"
+  ],
+  "notes": {
+    "label": "OpenSplat WebODM preparation test",
+    "helpUrl": "https://github.com/WebODM/OpenSplat",
+    "helpText": "Isolated operator test candidate. Requires a WebODM manifest snapshot. Not integrated into the WebODM UI.",
+    "hideNodeCountAndCoresPerNode": false,
+    "isInteractive": false,
+    "icon": "camera",
+    "category": "Data Processing",
+    "queueFilter": [
+      "gpu-a100-small",
+      "gpu-a100",
+      "gpu-a100-dev"
+    ]
+  }
+}

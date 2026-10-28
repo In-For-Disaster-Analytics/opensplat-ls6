@@ -82,6 +82,10 @@ def _client(base_url: str):
             "tapipy is not installed; use the Tapis environment or install tapipy"
         ) from error
 
+    access_token = os.environ.get("TAPIS_ACCESS_TOKEN")
+    if access_token:
+        return Tapis(base_url=base_url.rstrip("/"), access_token=access_token)
+
     username = os.environ.get("TAPIS_USERNAME") or input("Tapis username: ")
     password = os.environ.get("TAPIS_PASSWORD") or getpass("Tapis password: ")
     client = Tapis(base_url=base_url.rstrip("/"), username=username, password=password)
@@ -135,6 +139,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("choose --dry-run, --check, or --create")
     if args.create and not args.confirm_external_write:
         parser.error("--create requires --confirm-external-write")
+
+    if args.create and "PENDING_SIF_VERIFICATION" in json.dumps(spec):
+        print("ERROR: candidate runtime verification is incomplete", file=sys.stderr)
+        return 1
 
     try:
         client = _client(args.base_url)
