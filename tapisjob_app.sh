@@ -197,8 +197,15 @@ if [[ "$CENTER" == "1" ]]; then OPEN_SPLAT_CMD+=(--center); fi
 
 log "starting profile=$PROFILE format=$OUTPUT_FORMAT iterations=$NUM_ITERATIONS"
 set +e
-"${OPEN_SPLAT_CMD[@]}" > "$LOG_FILE" 2>&1
-EXIT_CODE=$?
+if [[ "${OPENSPLAT_STREAM_LOG:-0}" == "1" ]]; then
+  # NodeSplat consumes stdout for its authenticated, bounded console. Retain
+  # ordinary batch logs and preserve the trainer exit status through tee.
+  "${OPEN_SPLAT_CMD[@]}" 2>&1 | tee "$LOG_FILE"
+  EXIT_CODE=${PIPESTATUS[0]}
+else
+  "${OPEN_SPLAT_CMD[@]}" > "$LOG_FILE" 2>&1
+  EXIT_CODE=$?
+fi
 set -e
 if [[ "$EXIT_CODE" -ne 0 ]]; then
   log "OpenSplat failed with exit code $EXIT_CODE; log=$LOG_FILE" >&2
