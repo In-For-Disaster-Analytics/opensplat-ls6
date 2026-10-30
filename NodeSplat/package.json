@@ -1,0 +1,9 @@
+{
+  "name": "nodesplat",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Single-run OpenSplat worker with a NodeODX-like task API",
+  "license": "AGPL-3.0-only",
+  "engines": {"node": ">=22"},
+  "scripts": {"start": "node index.js", "test": "node --test test/*.test.js"}
+}

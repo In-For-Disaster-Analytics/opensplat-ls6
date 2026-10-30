@@ -221,3 +221,13 @@ This supersedes the earlier unverified-runtime note. The candidate preparation S
 SHA256 is `df64554a7481bfc1bd77521a2c4f9cd0f8ae505e51dcf3b7779eb059d396566a`.
 Existing 0.1.1 remains available. Training and visual alignment have not yet been
 accepted; no automatic WebODM submission is provided.
+
+## NodeSplat worker packaging
+
+`app.nodesplat.json` is a distinct candidate app (`nodesplat-ls6` 0.1.0) that runs the NodeSplat
+worker (see `NodeSplat/`) instead of the batch launcher; published `opensplat-ls6` versions are
+unchanged. `nodesplat_entry.sh` is its ZIP entry point and `build-nodesplat-zip.sh` builds
+`nodesplat-ls6-candidate.zip` with `NodeSplat/` and `opensplat-ls6/` trees. Neither
+script uploads or registers anything. Setting `OPENSPLAT_STREAM_LOG=1` makes `tapisjob_app.sh` stream
+trainer output to stdout (via `tee`) while still writing the batch log and preserving the trainer's
+exit status. The Node.js >= 22 location on LS6 is deployment-specific (`NODESPLAT_NODE_BIN`).
