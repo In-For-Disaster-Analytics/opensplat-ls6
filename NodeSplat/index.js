@@ -73,35 +73,30 @@ function createServer(config, task = new Task(config)) {
 }
 function coordinator(config, task, dependencies = {}) {
     const request = dependencies.fetch || fetch;
-    let registered = false, stopped = false, terminalAt = null, busy = false;
-    const identity = {uuid: config.taskId, run_id: config.runId, tapis_job_uuid: config.jobId, profile_id: config.profileId};
-    async function send(route, data) {
-        const response = await request(config.callbackUrl + route, {method: 'POST', redirect: 'error',
-            headers: {'Authorization': 'Bearer ' + config.callbackCapability, 'Content-Type': 'application/json'},
-            body: JSON.stringify({...identity, ...data}), signal: AbortSignal.timeout(10000)});
-        if (!response.ok) throw new Error('ClusterODX callback unavailable');
-        return response.json();
+    const terminal = [STATUS.COMPLETED, STATUS.FAILED, STATUS.CANCELED];
+    let stopped = false, terminalAt = null, busy = false;
+    // Same webhook ClusterODX uses for NodeODX workers. It carries no Authorization header: the
+    // registration secret and exact pending job/task identity in the body are the credentials.
+    const registration = {hostname: config.advertisedHost, port: config.advertisedPort, token: config.apiCapability,
+        registrationSecret: config.registrationSecret, tapisJobUuid: config.jobId, registrationUuid: config.taskId,
+        role: 'nodesplat', nodeReady: true};
+    async function register() {
+        const response = await request(config.callbackUrl + '/webhook/register-node', {method: 'POST', redirect: 'error',
+            headers: {'Content-Type': 'application/json'}, body: JSON.stringify(registration), signal: AbortSignal.timeout(10000)});
+        if (!response.ok) throw new Error('ClusterODX registration unavailable');
     }
     async function tick() {
-        if (busy || stopped) return;
+        if (busy || stopped) return {stopped};
         busy = true;
         try {
-            if (Date.now() >= config.leaseDeadline) { task.cancel(); stopped = true; return; }
-            if (!registered) {
-                await send('/splat/worker/register', {url: config.publicUrl, api_capability: config.apiCapability});
-                registered = true;
-            }
+            if (Date.now() >= config.leaseDeadline) { task.cancel(); stopped = true; return {stopped}; }
+            // Sent on every tick: a ClusterODX restart drops its in-memory route, so the next
+            // registration re-establishes it. Failures are retried on the next tick.
+            try { await register(); } catch (_) { /* retry next tick */ }
             const info = task.info();
-            const state = info?.result_ready ? 'result_ready' : info?.status.code === STATUS.FAILED ? 'failed' : info?.status.code === STATUS.CANCELED ? 'canceled' : 'running';
-            const response = await send('/splat/worker/heartbeat', {state, phase: info?.phase || 'registering', progress: info?.progress || null});
-            if (['result_ready', 'failed', 'canceled'].includes(state)) {
-                terminalAt ??= Date.now();
-                if (response.acknowledged === true || response.ack === true || Date.now() - terminalAt >= config.handoffMs) stopped = true;
-            }
-        } catch (_) {
-            // Cluster restart discards its raw API credential: re-register exact identity.
-            registered = false;
-            if (task.info() && [STATUS.COMPLETED, STATUS.FAILED, STATUS.CANCELED].includes(task.info().status.code)) {
+            if (task.record?.removed) stopped = true;
+            else if (info && terminal.includes(info.status.code)) {
+                // Grace fallback when ClusterODX never calls /task/remove after handoff.
                 terminalAt ??= Date.now();
                 if (Date.now() - terminalAt >= config.handoffMs) stopped = true;
             }
@@ -133,7 +128,6 @@ async function main() {
     for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, async () => {
         task.cancel();
         if (task.done) await task.done;
-        await callbacks.tick();
         clearInterval(timer); server.close(); server.closeIdleConnections();
     });
 }

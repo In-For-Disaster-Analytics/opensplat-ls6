@@ -51,7 +51,7 @@ class Task {
     }
     sanitize(value) {
         let result = String(value).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
-        for (const secret of [this.config.apiCapability, this.config.callbackCapability]) result = result.split(secret).join('[REDACTED]');
+        for (const secret of [this.config.apiCapability, this.config.registrationSecret]) result = result.split(secret).join('[REDACTED]');
         for (const root of [this.config.inputRoot, this.config.outputRoot, this.config.workRoot]) result = result.split(root).join('[storage]');
         result = result.replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[REDACTED JWT]')
             .replace(/((?:authorization|token|secret|password|capability)\s*[:=]\s*)(?:Bearer\s+)?[^\s,;]+/gi, '$1[REDACTED]');

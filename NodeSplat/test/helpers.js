@@ -10,7 +10,7 @@ const TASK = '22222222-2222-4222-8222-222222222222';
 const SOURCE = '33333333-3333-4333-8333-333333333333';
 const JOB = '44444444-4444-4444-8444-444444444444';
 const API = 'a'.repeat(43);
-const CALLBACK = 'b'.repeat(43);
+const SECRET = 'registration-secret-0123456789';
 
 // A fake launcher is a bash script: tests control stdout, exit status and artifacts.
 function fixture(launcherBody, overrides = {}) {
@@ -31,9 +31,9 @@ function fixture(launcherBody, overrides = {}) {
     const env = {NODESPLAT_ENABLED: 'YES', NODESPLAT_RUN_ID: RUN, NODESPLAT_CLUSTER_TASK_ID: TASK,
         NODESPLAT_TAPIS_JOB_ID: JOB, NODESPLAT_PROFILE_ID: 'nodesplat-v1', NODESPLAT_APP_ID: 'nodesplat',
         NODESPLAT_APP_VERSION: '0.1.0', NODESPLAT_BIND_HOST: '127.0.0.1', NODESPLAT_PORT: '8080',
-        NODESPLAT_CALLBACK_CAPABILITY: CALLBACK, NODESPLAT_API_CAPABILITY: API,
+        NODESPLAT_REGISTRATION_SECRET: SECRET, NODESPLAT_API_CAPABILITY: API,
         NODESPLAT_INPUT_ROOT: dirs.input, NODESPLAT_OUTPUT_ROOT: dirs.output, NODESPLAT_WORK_ROOT: dirs.work,
-        NODESPLAT_PUBLIC_URL: 'http://127.0.0.1:8080', NODESPLAT_CALLBACK_URL: 'https://cluster.example/',
+        NODESPLAT_PUBLIC_URL: 'http://c301-001.ls6.example:8080', NODESPLAT_CALLBACK_URL: 'https://cluster.example/',
         NODESPLAT_LEASE_DEADLINE: String(Math.floor(Date.now() / 1000) + 3600),
         PATH: process.env.PATH, ...overrides};
     const config = load(env);
@@ -66,4 +66,4 @@ async function until(predicate, timeout = 10000) {
     throw new Error('Timed out waiting for condition');
 }
 
-module.exports = {fixture, until, SUCCESS, RUN, TASK, SOURCE, JOB, API, CALLBACK};
+module.exports = {fixture, until, SUCCESS, RUN, TASK, SOURCE, JOB, API, SECRET};

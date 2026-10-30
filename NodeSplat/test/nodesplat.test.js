@@ -6,7 +6,7 @@ const path = require('node:path');
 const {load} = require('../config');
 const {Task, STATUS} = require('../libs/Task');
 const {createServer, coordinator} = require('../index');
-const {fixture, until, SUCCESS, RUN, TASK, JOB, API, CALLBACK} = require('./helpers');
+const {fixture, until, SUCCESS, RUN, TASK, JOB, API, SECRET} = require('./helpers');
 
 async function serve(f, task = new Task(f.config)) {
     const {server} = createServer(f.config, task);
@@ -18,10 +18,21 @@ async function serve(f, task = new Task(f.config)) {
     return {call, task, close: () => { server.closeAllConnections(); server.close(); }};
 }
 
-test('configuration fails closed and keeps capabilities distinct', () => {
+test('configuration fails closed and validates credentials and the advertised address', () => {
     const f = fixture('exit 0');
     assert.throws(() => load({...f.config.env, NODESPLAT_ENABLED: 'NO'}), /disabled/);
-    assert.throws(() => load({...f.config.env, NODESPLAT_API_CAPABILITY: CALLBACK}), /differ/);
+    assert.throws(() => load({...f.config.env, NODESPLAT_REGISTRATION_SECRET: undefined}), /NODESPLAT_REGISTRATION_SECRET is required/);
+    for (const bad of ['short', 'has space in it 0123456789', 'x'.repeat(513)]) {
+        assert.throws(() => load({...f.config.env, NODESPLAT_REGISTRATION_SECRET: bad}), /registration secret/);
+    }
+    assert.throws(() => load({...f.config.env, NODESPLAT_PUBLIC_URL: 'http://node.example:8080/path'}), /service URL/);
+    // The retired per-job callback capability is no longer required or read
+    const {NODESPLAT_CALLBACK_CAPABILITY, ...rest} = f.config.env;
+    assert.ok(load(rest));
+    const config = load(f.config.env);
+    assert.equal(config.advertisedHost, 'c301-001.ls6.example');
+    assert.equal(config.advertisedPort, 8080);
+    assert.equal(load({...f.config.env, NODESPLAT_PUBLIC_URL: 'https://node.example'}).advertisedPort, 443);
     assert.throws(() => load({...f.config.env, NODESPLAT_API_CAPABILITY: 'short'}), /capability/);
     assert.throws(() => load({...f.config.env, NODESPLAT_INPUT_ROOT: 'relative'}), /absolute/);
     assert.throws(() => load({...f.config.env, NODESPLAT_PORT: undefined}), /Invalid NODESPLAT_PORT/);
@@ -156,14 +167,15 @@ test('child never inherits credentials or the user token', async () => {
     f.config.env.NODESPLAT_GRANT_SECRET = 'g'.repeat(40);
     const childEnv = require('../libs/opensplatRunner').environment(f.config, 'in', 'work');
     assert.equal(Object.keys(childEnv).some(key => /CAPABILITY|GRANT|TOKEN|JWT|SECRET/.test(key)), false);
-    assert.equal(Object.values(childEnv).some(value => /eyJ|g{40}/.test(value)), false);
+    assert.equal(Object.values(childEnv).some(value => /eyJ|g{40}/.test(value) || value.includes(SECRET) || value.includes(API)), false);
+    assert.equal('NODESPLAT_REGISTRATION_SECRET' in childEnv, false);
     assert.equal(childEnv.OPENSPLAT_STREAM_LOG, '1');
     const s = await serve(f);
     try {
         await s.call('/task/new', {method: 'POST', body: f.body});
         await s.task.done;
         const text = fs.readFileSync(path.join(f.dirs.output, RUN, 'console.txt'), 'utf8');
-        assert.doesNotMatch(text, /NODESPLAT_(API|CALLBACK)_CAPABILITY|GRANT|TAPIS_TOKEN/);
+        assert.doesNotMatch(text, /NODESPLAT_(API_CAPABILITY|REGISTRATION_SECRET)|GRANT|TAPIS_TOKEN/);
     } finally { s.close(); }
 });
 
@@ -259,46 +271,93 @@ test('stored allocation identity must match configuration', () => {
     assert.throws(() => new Task(f.config), /identity mismatch/);
 });
 
-test('callback coordinator registers once, heartbeats and stops after acknowledgment', async () => {
-    const f = fixture(SUCCESS);
-    const task = new Task(f.config);
+test('registration secret and API capability are redacted from console output', async () => {
+    const f = fixture(`echo "secret is ${SECRET} and token ${API}"; exit 1`);
+    const s = await serve(f);
+    try {
+        await s.call('/task/new', {method: 'POST', body: f.body});
+        await s.task.done;
+        const text = fs.readFileSync(path.join(f.dirs.output, RUN, 'console.txt'), 'utf8');
+        assert.match(text, /secret is \[REDACTED\] and token \[REDACTED\]/);
+        assert.equal(text.includes(SECRET) || text.includes(API), false);
+    } finally { s.close(); }
+});
+
+function recorder(behavior = () => ({ok: true})) {
     const calls = [];
     const fetch = async (url, options) => {
-        const body = JSON.parse(options.body);
-        calls.push({url, body, auth: options.headers.Authorization, redirect: options.redirect});
-        return {ok: true, json: async () => ({acknowledged: body.state === 'result_ready'})};
+        calls.push({url, options, body: JSON.parse(options.body)});
+        const result = behavior(calls.length);
+        if (result instanceof Error) throw result;
+        return result;
     };
-    const c = coordinator(f.config, task, {fetch});
-    await c.tick();
-    assert.equal(calls[0].url, 'https://cluster.example/splat/worker/register');
-    assert.equal(calls[0].body.api_capability, API);
-    assert.equal(calls[0].auth, 'Bearer ' + CALLBACK);
-    assert.equal(calls[0].redirect, 'error');
-    assert.equal(calls[1].body.state, 'running');
+    return {calls, fetch};
+}
+
+test('coordinator posts the NodeODX-style registration webhook on every tick', async () => {
+    const f = fixture(SUCCESS);
+    const task = new Task(f.config);
+    const r = recorder();
+    const c = coordinator(f.config, task, {fetch: r.fetch});
+    await c.tick(); await c.tick(); await c.tick();
+    assert.equal(r.calls.length, 3);
+    for (const call of r.calls) {
+        assert.equal(call.url, 'https://cluster.example/webhook/register-node');
+        assert.equal(call.options.method, 'POST');
+        assert.equal(call.options.redirect, 'error');
+        assert.deepEqual(call.options.headers, {'Content-Type': 'application/json'});
+        assert.equal(call.options.headers.Authorization, undefined);
+        assert.deepEqual(call.body, {hostname: 'c301-001.ls6.example', port: 8080, token: API, registrationSecret: SECRET,
+            tapisJobUuid: JOB, registrationUuid: TASK, role: 'nodesplat', nodeReady: true});
+        assert.ok(call.options.signal instanceof AbortSignal);
+    }
     assert.equal(c.stopped, false);
+});
+
+test('coordinator retries registration after a failure or non-2xx response', async () => {
+    const f = fixture(SUCCESS);
+    const task = new Task(f.config);
+    const r = recorder(n => n === 1 ? new Error('down') : n === 2 ? {ok: false, status: 503} : {ok: true});
+    const c = coordinator(f.config, task, {fetch: r.fetch});
+    await c.tick(); await c.tick(); await c.tick();
+    assert.equal(r.calls.length, 3);
+    assert.equal(c.stopped, false);
+});
+
+test('coordinator keeps registering through completion and stops once ClusterODX removes the task', async () => {
+    const f = fixture(SUCCESS);
+    const task = new Task(f.config);
+    const r = recorder();
+    const c = coordinator(f.config, task, {fetch: r.fetch});
+    await task.create(f.body);
+    await task.done;
+    assert.equal(task.info().status.code, STATUS.COMPLETED);
+    await c.tick();
+    assert.equal(c.stopped, false);
+    // Handoff happens through the NodeODX-style removal call, not a heartbeat acknowledgment
+    const s = await serve(f, task);
+    try { assert.equal((await s.call('/task/remove', {method: 'POST', body: {uuid: TASK}})).status, 200); } finally { s.close(); }
+    const before = r.calls.length;
+    await c.tick();
+    assert.equal(r.calls.length, before + 1, 'still registers on the tick that observes removal');
+    assert.equal(c.stopped, true);
+    await c.tick();
+    assert.equal(r.calls.length, before + 1, 'no further requests once stopped');
+});
+
+test('coordinator stops after the grace period when the task is never removed', async () => {
+    const f = fixture('exit 1');
+    f.config.handoffMs = 50;
+    const task = new Task(f.config);
+    const r = recorder(() => new Error('cluster unreachable'));
+    const c = coordinator(f.config, task, {fetch: r.fetch});
     await task.create(f.body);
     await task.done;
     await c.tick();
-    assert.equal(calls.filter(call => call.url.endsWith('/register')).length, 1);
-    assert.equal(calls.at(-1).body.state, 'result_ready');
-    assert.equal(c.stopped, true);
-    for (const call of calls) assert.deepEqual([call.body.uuid, call.body.run_id, call.body.tapis_job_uuid], [TASK, RUN, JOB]);
-});
-
-test('coordinator re-registers after the cluster loses its credential', async () => {
-    const f = fixture(SUCCESS);
-    const task = new Task(f.config);
-    let fail = false; const urls = [];
-    const fetch = async url => {
-        urls.push(url);
-        if (fail) throw new Error('down');
-        return {ok: true, json: async () => ({})};
-    };
-    const c = coordinator(f.config, task, {fetch});
+    assert.equal(c.stopped, false);
+    await new Promise(resolve => setTimeout(resolve, 80));
     await c.tick();
-    fail = true; await c.tick();
-    fail = false; await c.tick();
-    assert.equal(urls.filter(url => url.endsWith('/register')).length, 2);
+    assert.equal(c.stopped, true);
 });
 
 test('coordinator cancels the child and stops when the lease expires', async () => {
@@ -307,9 +366,11 @@ test('coordinator cancels the child and stops when the lease expires', async () 
     await task.create(f.body);
     await until(() => task.child);
     f.config.leaseDeadline = Date.now() - 1;
-    const c = coordinator(f.config, task, {fetch: async () => ({ok: true, json: async () => ({})})});
+    const r = recorder();
+    const c = coordinator(f.config, task, {fetch: r.fetch});
     await c.tick();
     assert.equal(c.stopped, true);
+    assert.equal(r.calls.length, 0, 'an expired lease does not register again');
     await task.done;
     assert.equal(task.info().status.code, STATUS.CANCELED);
 });
