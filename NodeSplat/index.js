@@ -76,9 +76,9 @@ function coordinator(config, task, dependencies = {}) {
     const terminal = [STATUS.COMPLETED, STATUS.FAILED, STATUS.CANCELED];
     let stopped = false, terminalAt = null, busy = false;
     // Same webhook ClusterODX uses for NodeODX workers. It carries no Authorization header: the
-    // registration secret and exact pending job/task identity in the body are the credentials.
+    // per-job token and exact pending job/task identity in the body are the credentials.
     const registration = {hostname: config.advertisedHost, port: config.advertisedPort, token: config.apiCapability,
-        registrationSecret: config.registrationSecret, tapisJobUuid: config.jobId, registrationUuid: config.taskId,
+        tapisJobUuid: config.jobId, registrationUuid: config.taskId,
         role: 'nodesplat', nodeReady: true};
     async function register() {
         const response = await request(config.callbackUrl + '/webhook/register-node', {method: 'POST', redirect: 'error',

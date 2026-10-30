@@ -21,10 +21,8 @@ async function serve(f, task = new Task(f.config)) {
 test('configuration fails closed and validates credentials and the advertised address', () => {
     const f = fixture('exit 0');
     assert.throws(() => load({...f.config.env, NODESPLAT_ENABLED: 'NO'}), /disabled/);
-    assert.throws(() => load({...f.config.env, NODESPLAT_REGISTRATION_SECRET: undefined}), /NODESPLAT_REGISTRATION_SECRET is required/);
-    for (const bad of ['short', 'has space in it 0123456789', 'x'.repeat(513)]) {
-        assert.throws(() => load({...f.config.env, NODESPLAT_REGISTRATION_SECRET: bad}), /registration secret/);
-    }
+    // The per-job API token is the only credential; a cluster-wide secret is neither required nor read.
+    assert.equal('registrationSecret' in load({...f.config.env, NODESPLAT_REGISTRATION_SECRET: SECRET}), false);
     assert.throws(() => load({...f.config.env, NODESPLAT_PUBLIC_URL: 'http://node.example:8080/path'}), /service URL/);
     // The retired per-job callback capability is no longer required or read
     const {NODESPLAT_CALLBACK_CAPABILITY, ...rest} = f.config.env;
@@ -165,6 +163,7 @@ test('child never inherits credentials or the user token', async () => {
     const f = fixture('env | grep -E "NODESPLAT_|JWT|TAPIS_TOKEN|GRANT" | sed "s/=.*//" || echo none; exit 1');
     f.config.env.TAPIS_TOKEN = 'eyJhbGciOiJ.eyJzdWIiOiJ.c2ln';
     f.config.env.NODESPLAT_GRANT_SECRET = 'g'.repeat(40);
+    f.config.env.NODESPLAT_REGISTRATION_SECRET = SECRET;
     const childEnv = require('../libs/opensplatRunner').environment(f.config, 'in', 'work');
     assert.equal(Object.keys(childEnv).some(key => /CAPABILITY|GRANT|TOKEN|JWT|SECRET/.test(key)), false);
     assert.equal(Object.values(childEnv).some(value => /eyJ|g{40}/.test(value) || value.includes(SECRET) || value.includes(API)), false);
@@ -271,15 +270,15 @@ test('stored allocation identity must match configuration', () => {
     assert.throws(() => new Task(f.config), /identity mismatch/);
 });
 
-test('registration secret and API capability are redacted from console output', async () => {
-    const f = fixture(`echo "secret is ${SECRET} and token ${API}"; exit 1`);
+test('API capability is redacted from console output', async () => {
+    const f = fixture(`echo "token ${API}"; exit 1`);
     const s = await serve(f);
     try {
         await s.call('/task/new', {method: 'POST', body: f.body});
         await s.task.done;
         const text = fs.readFileSync(path.join(f.dirs.output, RUN, 'console.txt'), 'utf8');
-        assert.match(text, /secret is \[REDACTED\] and token \[REDACTED\]/);
-        assert.equal(text.includes(SECRET) || text.includes(API), false);
+        assert.match(text, /token \[REDACTED\]/);
+        assert.equal(text.includes(API), false);
     } finally { s.close(); }
 });
 
@@ -307,7 +306,7 @@ test('coordinator posts the NodeODX-style registration webhook on every tick', a
         assert.equal(call.options.redirect, 'error');
         assert.deepEqual(call.options.headers, {'Content-Type': 'application/json'});
         assert.equal(call.options.headers.Authorization, undefined);
-        assert.deepEqual(call.body, {hostname: 'c301-001.ls6.example', port: 8080, token: API, registrationSecret: SECRET,
+        assert.deepEqual(call.body, {hostname: 'c301-001.ls6.example', port: 8080, token: API,
             tapisJobUuid: JOB, registrationUuid: TASK, role: 'nodesplat', nodeReady: true});
         assert.ok(call.options.signal instanceof AbortSignal);
     }

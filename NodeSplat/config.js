@@ -20,9 +20,8 @@ function load(env = process.env) {
         config[key] = required(env, `NODESPLAT_${name}`);
         if (!UUID.test(config[key]) && !(key === 'jobId' && /^[A-Za-z0-9._-]{1,200}$/.test(config[key]))) throw new Error(`Invalid ${name}`);
     }
-    for (const [key, name] of Object.entries({profileId:'PROFILE_ID', appId:'APP_ID', appVersion:'APP_VERSION', host:'BIND_HOST', apiCapability:'API_CAPABILITY', registrationSecret:'REGISTRATION_SECRET'})) config[key] = required(env, `NODESPLAT_${name}`);
+    for (const [key, name] of Object.entries({profileId:'PROFILE_ID', appId:'APP_ID', appVersion:'APP_VERSION', host:'BIND_HOST', apiCapability:'API_CAPABILITY'})) config[key] = required(env, `NODESPLAT_${name}`);
     if (!/^[A-Za-z0-9_-]{43,128}$/.test(config.apiCapability)) throw new Error('Invalid scoped capability');
-    if (!/^\S{16,512}$/.test(config.registrationSecret)) throw new Error('Invalid registration secret');
     for (const [key, name] of Object.entries({inputRoot:'INPUT_ROOT', outputRoot:'OUTPUT_ROOT', workRoot:'WORK_ROOT'})) {
         config[key] = required(env, `NODESPLAT_${name}`);
         if (!path.isAbsolute(config[key])) throw new Error(`${name} must be absolute`);

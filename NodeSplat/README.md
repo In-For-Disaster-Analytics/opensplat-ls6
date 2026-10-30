@@ -32,8 +32,7 @@ Required: `NODESPLAT_ENABLED=YES`, `NODESPLAT_RUN_ID`, `NODESPLAT_CLUSTER_TASK_I
 be `/`; its host and port are what ClusterODX is told to connect to), `NODESPLAT_CALLBACK_URL`
 (ClusterODX base URL; the worker appends `/webhook/register-node`),
 `NODESPLAT_API_CAPABILITY` (the node token ClusterODX presents to this worker; 43–128 chars of
-`[A-Za-z0-9_-]`), `NODESPLAT_REGISTRATION_SECRET` (16–512 chars, no whitespace; the shared secret
-for the registration webhook), `NODESPLAT_INPUT_ROOT`, `NODESPLAT_OUTPUT_ROOT`, `NODESPLAT_WORK_ROOT`
+`[A-Za-z0-9_-]`; it is unique to this job and also authenticates the registration), `NODESPLAT_INPUT_ROOT`, `NODESPLAT_OUTPUT_ROOT`, `NODESPLAT_WORK_ROOT`
 (absolute paths) and `NODESPLAT_LEASE_DEADLINE` (epoch seconds, must be in the future).
 Optional bounds: `NODESPLAT_MAX_LOG_BYTES` (default and maximum 50 MiB),
 `NODESPLAT_MAX_INPUT_BYTES`, `NODESPLAT_MAX_IMAGES`, `NODESPLAT_MAX_RESULT_BYTES`, `NODESPLAT_LAUNCHER` (absolute path; defaults to `../tapisjob_app.sh`).
@@ -43,7 +42,7 @@ There are no production port or address defaults.
 
 1. Starts and registers with ClusterODX through the same webhook NodeODX workers use:
    `POST <NODESPLAT_CALLBACK_URL>/webhook/register-node` with no `Authorization` header and a JSON
-   body `{hostname, port, token, registrationSecret, tapisJobUuid, registrationUuid, role: "nodesplat",
+   body `{hostname, port, token, tapisJobUuid, registrationUuid, role: "nodesplat",
    nodeReady: true}`. `token` is `NODESPLAT_API_CAPABILITY`, `tapisJobUuid` is the Tapis job UUID and
    `registrationUuid` is the ClusterODX task UUID. Redirects are refused and each attempt times out
    after 10 s. The registration is repeated every 30 s (a ClusterODX restart drops its in-memory route),
@@ -51,7 +50,7 @@ There are no production port or address defaults.
 2. ClusterODX then `POST /task/new`. The worker validates the manifest checksum/schema and every
    asset (regular files, no symlinks, byte/image bounds).
 3. Preparation and training run through the launcher with a scrubbed environment (no
-   capabilities, registration secret, grants or user tokens). Console output is redacted, bounded and
+   capabilities, grants, cluster secrets or user tokens). Console output is redacted, bounded and
    persisted to `<output root>/<run>/console.txt`.
 4. Exit 0 plus provenance/SHA-256 validation publishes `model.ply` and `manifest.json`
    atomically. ClusterODX sees `result_ready` by polling `GET /task/:uuid/info`.
