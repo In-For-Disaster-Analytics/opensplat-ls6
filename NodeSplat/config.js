@@ -42,6 +42,12 @@ function load(env = process.env) {
     config.maxInputBytes = integer(env, 'NODESPLAT_MAX_INPUT_BYTES', 10 * 1024 ** 3, 1, 1024 ** 4);
     config.maxImages = integer(env, 'NODESPLAT_MAX_IMAGES', 2000, 1, 20000);
     config.maxResultBytes = integer(env, 'NODESPLAT_MAX_RESULT_BYTES', 8 * 1024 ** 3, 1, 1024 ** 4);
+    // Set by nodesplat_entry.sh when the worker runs inside the all-in-one image (no nested Apptainer).
+    config.inContainer = env.NODESPLAT_IN_CONTAINER === '1';
+    config.imageRef = env.NODESPLAT_IMAGE_REF || '';
+    config.imageSha256 = env.NODESPLAT_IMAGE_SHA256 || '';
+    if (config.imageRef && !/^[A-Za-z0-9._:\/@+-]{1,300}$/.test(config.imageRef)) throw new Error('Invalid NODESPLAT_IMAGE_REF');
+    if (config.imageSha256 && !/^[a-f0-9]{64}$/.test(config.imageSha256)) throw new Error('Invalid NODESPLAT_IMAGE_SHA256');
     config.heartbeatMs = 30000;
     config.handoffMs = 600000;
     config.leaseDeadline = integer(env, 'NODESPLAT_LEASE_DEADLINE', undefined, 1, Number.MAX_SAFE_INTEGER) * 1000;
