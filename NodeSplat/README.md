@@ -59,6 +59,14 @@ There are no production port or address defaults.
    and on the lease deadline it cancels any running child and exits.
    A worker restart with a non-terminal record fails the attempt; it never retrains.
 
+## Running it
+
+By default the worker runs inside the all-in-one image (`images/Dockerfile.nodesplat`), started by
+`nodesplat_entry.sh` with `NODESPLAT_IN_CONTAINER=1`; the launcher then runs preparation and OpenSplat directly.
+Optional config: `NODESPLAT_IN_CONTAINER` (`1` inside the image), `NODESPLAT_IMAGE_REF` and
+`NODESPLAT_IMAGE_SHA256` (recorded in provenance). `NODESPLAT_RUN_MODE=host` is the fallback that needs a host
+Node.js >= 22 (`NODESPLAT_NODE_BIN`).
+
 ## Tests and packaging
 
 ```bash

@@ -1,0 +1,58 @@
+# NodeSplat all-in-one runtime: the Node.js worker, the WebODM preparation stack (Python/PDAL) and the
+# OpenSplat CUDA binary in ONE image, like NodeODX runs NodeODM in one image. The job runs
+#   apptainer exec --nv <this image> node /opt/nodesplat/NodeSplat/index.js
+# and the launcher runs preparation/training directly (OPENSPLAT_IN_CONTAINER=1): Apptainer cannot nest.
+# Build context is the repository root:  docker build -f images/Dockerfile.nodesplat .
+ARG BASE_IMAGE=ghcr.io/in-for-disaster-analytics/opensplat-ls6:cuda
+FROM mambaorg/micromamba:2.0.5 AS micromamba
+
+FROM ${BASE_IMAGE}
+ARG NODE_VERSION=22.11.0
+# Optional extra pin; the build always verifies against nodejs.org's published SHASUMS256.txt.
+ARG NODE_SHA256=
+
+LABEL org.opencontainers.image.source="https://github.com/In-For-Disaster-Analytics/opensplat-ls6" \
+      org.opencontainers.image.title="NodeSplat LS6 all-in-one" \
+      org.opencontainers.image.description="NodeSplat worker + WebODM preparation (Python/PDAL) + OpenSplat CUDA for TACC LS6 A100 nodes"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Node.js, verified against the official checksum list before it is unpacked.
+RUN set -eux; \
+    f="node-v${NODE_VERSION}-linux-x64.tar.xz"; \
+    cd /tmp; \
+    curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/${f}"; \
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" | grep " ${f}\$" | sha256sum -c -; \
+    if [ -n "${NODE_SHA256}" ]; then echo "${NODE_SHA256}  ${f}" | sha256sum -c -; fi; \
+    tar -xJf "${f}" -C /opt; \
+    mv "/opt/node-v${NODE_VERSION}-linux-x64" /opt/node; \
+    rm -f "${f}"; \
+    /opt/node/bin/node --version
+
+# The same preparation stack as images/Dockerfile.prepare (pins must stay in step with it).
+COPY --from=micromamba /bin/micromamba /usr/local/bin/micromamba
+RUN micromamba install -y -p /opt/conda -c conda-forge \
+        python=3.11 pdal=2.8 numpy=1.26.4 pillow=11.3.0 \
+    && micromamba clean --all --yes \
+    && /opt/conda/bin/pdal --version \
+    && /opt/conda/bin/python -c "import numpy, PIL"
+
+WORKDIR /opt/nodesplat
+COPY NodeSplat/package.json NodeSplat/index.js NodeSplat/config.js NodeSplat/
+COPY NodeSplat/libs NodeSplat/libs
+COPY tapisjob_app.sh stage_project.py validate_project.py validate_artifact.py webodm_input.py \
+     prepare_webodm.py webodm_export.py validate_colmap.py WEBODM-LICENSE.txt THIRD-PARTY.md opensplat-ls6/
+COPY app.nodesplat.json opensplat-ls6/app.json
+RUN chmod 0755 opensplat-ls6/tapisjob_app.sh
+
+# OpenSplat's own PATH/LD_LIBRARY_PATH (set by the base image) are kept; Node and Python are added in front.
+ENV PATH=/opt/node/bin:/opt/conda/bin:${PATH} \
+    NODESPLAT_LAUNCHER=/opt/nodesplat/opensplat-ls6/tapisjob_app.sh \
+    NODESPLAT_IN_CONTAINER=1
+ENTRYPOINT []
+CMD ["node", "/opt/nodesplat/NodeSplat/index.js"]

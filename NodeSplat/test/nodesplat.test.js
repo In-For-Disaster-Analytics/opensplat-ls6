@@ -38,6 +38,21 @@ test('configuration fails closed and validates credentials and the advertised ad
     assert.throws(() => load({...f.config.env, NODESPLAT_LEASE_DEADLINE: '1'}), /expired/);
 });
 
+test('container mode is explicit, validated, and reaches the launcher environment', () => {
+    const f = fixture('exit 0');
+    const runner = require('../libs/opensplatRunner');
+    assert.equal(load({...f.config.env}).inContainer, false);
+    assert.equal(runner.environment(load({...f.config.env}), 'in', 'work').OPENSPLAT_IN_CONTAINER, '0');
+    const sha = 'a'.repeat(64);
+    const config = load({...f.config.env, NODESPLAT_IN_CONTAINER: '1', NODESPLAT_IMAGE_REF: 'docker://ghcr.io/org/img:nodesplat', NODESPLAT_IMAGE_SHA256: sha});
+    const env = runner.environment(config, 'in', 'work');
+    assert.deepEqual([env.OPENSPLAT_IN_CONTAINER, env.NODESPLAT_IMAGE_REF, env.NODESPLAT_IMAGE_SHA256], ['1', 'docker://ghcr.io/org/img:nodesplat', sha]);
+    // Image identity is not forwarded outside container mode, and bad values are refused
+    assert.equal('NODESPLAT_IMAGE_REF' in runner.environment(load({...f.config.env, NODESPLAT_IMAGE_REF: 'x'}), 'in', 'work'), false);
+    assert.throws(() => load({...f.config.env, NODESPLAT_IMAGE_REF: 'bad ref; rm -rf /'}), /IMAGE_REF/);
+    assert.throws(() => load({...f.config.env, NODESPLAT_IMAGE_SHA256: 'xyz'}), /IMAGE_SHA256/);
+});
+
 test('API requires the worker capability and advertises the fixed profile', async () => {
     const f = fixture('exit 0');
     const s = await serve(f);

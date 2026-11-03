@@ -224,10 +224,28 @@ accepted; no automatic WebODM submission is provided.
 
 ## NodeSplat worker packaging
 
-`app.nodesplat.json` is a distinct candidate app (`nodesplat-ls6` 0.1.0) that runs the NodeSplat
-worker (see `NodeSplat/`) instead of the batch launcher; published `opensplat-ls6` versions are
-unchanged. `nodesplat_entry.sh` is its ZIP entry point and `build-nodesplat-zip.sh` builds
-`nodesplat-ls6-candidate.zip` with `NodeSplat/` and `opensplat-ls6/` trees. Neither
-script uploads or registers anything. Setting `OPENSPLAT_STREAM_LOG=1` makes `tapisjob_app.sh` stream
-trainer output to stdout (via `tee`) while still writing the batch log and preserving the trainer's
-exit status. The Node.js >= 22 location on LS6 is deployment-specific (`NODESPLAT_NODE_BIN`).
+`app.nodesplat.json` is a distinct candidate app (`nodesplat-ls6` 0.1.0) that runs the NodeSplat worker (see
+`NodeSplat/`) instead of the batch launcher; published `opensplat-ls6` versions are unchanged. Neither build
+script uploads or registers anything.
+
+**Default: one all-in-one image, like NodeODX.** `images/Dockerfile.nodesplat` extends the published CUDA OpenSplat
+image with Node.js 22 (verified against nodejs.org's checksum list), the same Python/PDAL stack as
+`Dockerfile.prepare`, the worker, and the launcher. `nodesplat_entry.sh` (the ZIP entry point) pulls it once into a
+SIF cache and runs `apptainer exec --nv ... node /opt/nodesplat/NodeSplat/index.js`. The host needs only `bash` and
+`apptainer`. Inside the image the launcher runs with `OPENSPLAT_IN_CONTAINER=1`: preparation and OpenSplat run
+directly, because Apptainer cannot nest. Batch behaviour (`OPENSPLAT_IN_CONTAINER` unset) is unchanged.
+
+- Publish the image with `.github/workflows/publish-nodesplat.yml` (manual dispatch, or a push to `main` /
+  `deploy/webodm-preparation-20261028` that touches the image inputs). It needs
+  `ghcr.io/in-for-disaster-analytics/opensplat-ls6:cuda` from `publish-images.yml` to exist.
+- `NODESPLAT_IMAGE` (docker:// reference; pin `@sha256:` for a fixed runtime), `NODESPLAT_SIF_CACHE_DIR` and
+  `NODESPLAT_REFRESH_SIF=1` (re-pull a moving tag) control the image and cache. The first pull converts a
+  multi-GB image: pre-warm the cache on a login node, and give the job enough `maxMinutes`.
+- The provenance manifest records the image reference and SHA-256 of the image the job ran in.
+
+**Fallback: `NODESPLAT_RUN_MODE=host`** runs the worker from the ZIP with a Node.js >= 22 binary on the host
+(`NODESPLAT_NODE_BIN`); the launcher then starts its own Apptainer containers.
+
+`build-nodesplat-zip.sh` builds `nodesplat-ls6-candidate.zip` (entry script, worker, launcher; the container mode
+only uses the entry script). `OPENSPLAT_STREAM_LOG=1` makes `tapisjob_app.sh` stream trainer output to stdout (via
+`tee`) while still writing the batch log and preserving the trainer's exit status.
