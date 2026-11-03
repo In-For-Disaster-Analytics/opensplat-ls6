@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FAKE_APPTAINER = r'''#!/bin/bash
 echo "$*" >> "$CALL_LOG"
 if [[ "$1" == "pull" ]]; then
+  echo "PULLENV cache=$APPTAINER_CACHEDIR tmp=$APPTAINER_TMPDIR" >> "$ENV_LOG"
   shift; while [[ "$1" == --* ]]; do shift; done
   printf 'fake-image' > "$1"
 elif [[ "$1" == "exec" ]]; then
@@ -48,6 +49,7 @@ class EntryScriptTests(unittest.TestCase):
                '_tapisJobWorkingDir': str(self.job), 'NODESPLAT_PORT': '3101',
                'NODESPLAT_PUBLIC_URL': 'http://node.example:3101/', 'NODESPLAT_INPUT_ROOT': str(self.inputs),
                'NODESPLAT_OUTPUT_ROOT': str(self.outputs), 'NODESPLAT_API_CAPABILITY': 'a' * 43,
+               'NODESPLAT_RUN_ID': '11111111-1111-4111-8111-111111111111',
                'NODESPLAT_SIF_CACHE_DIR': str(self.tmp / 'sifs'), 'HOME': str(self.tmp),
                # Must never reach the container:
                'TAPIS_ACCESS_TOKEN': 'eyJsecret.token.value', 'AWS_SECRET_ACCESS_KEY': 'hunter2'}
@@ -72,6 +74,28 @@ class EntryScriptTests(unittest.TestCase):
         self.calls.write_text('')
         self.assertEqual(self.run_entry().returncode, 0)
         self.assertEqual([l.split()[0] for l in self.calls_text().splitlines()], ['exec'])
+
+    def test_pull_progress_reaches_the_console_and_downloads_stay_off_home(self):
+        self.assertEqual(self.run_entry().returncode, 0)
+        console = (self.outputs / '11111111-1111-4111-8111-111111111111' / 'console.txt').read_text()
+        self.assertIn('pulling the runtime image docker://ghcr.io/', console)
+        self.assertIn('runtime image ready', console)
+        self.assertIn('starting the worker in', console)
+        # Apptainer's cache and temp space sit beside the SIF (scratch), never in $HOME
+        pull = [l for l in self.envlog.read_text().splitlines() if l.startswith('PULLENV')][0]
+        self.assertIn(f"cache={self.tmp}/sifs/.apptainer-cache", pull)
+        self.assertIn(f"tmp={self.tmp}/sifs/.apptainer-tmp", pull)
+        self.assertNotIn(str(self.tmp / '.apptainer'), pull)
+
+    def test_a_failed_pull_is_reported_in_the_console_too(self):
+        self.write_tool('apptainer', '#!/bin/bash\n[[ "$1" == pull ]] && exit 1\nexit 0\n')
+        self.assertNotEqual(self.run_entry().returncode, 0)
+        console = (self.outputs / '11111111-1111-4111-8111-111111111111' / 'console.txt').read_text()
+        self.assertIn('ERROR: failed to pull', console)
+
+    def test_console_path_is_only_used_for_a_valid_run_id(self):
+        self.assertEqual(self.run_entry(NODESPLAT_RUN_ID='../../escape').returncode, 0)
+        self.assertEqual([p for p in self.tmp.rglob('console.txt')], [])
 
     def test_only_the_intended_environment_crosses_into_the_container(self):
         self.assertEqual(self.run_entry().returncode, 0)

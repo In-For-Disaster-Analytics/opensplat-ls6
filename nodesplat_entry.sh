@@ -21,6 +21,15 @@ mkdir -p "$NODESPLAT_WORK_ROOT"
 # The address ClusterODX can reach; override when the compute node name is not routable.
 export NODESPLAT_PUBLIC_URL="${NODESPLAT_PUBLIC_URL:-http://$(hostname -f):$NODESPLAT_PORT}"
 
+# Progress lines also go to the run's console file, which WebODM shows, so a long first image pull is
+# visible before the worker (the usual source of console output) is running. Best effort only.
+CONSOLE=""
+if [[ "${NODESPLAT_RUN_ID:-}" =~ ^[0-9a-f-]{36}$ && -n "${NODESPLAT_OUTPUT_ROOT:-}" ]]; then
+  CONSOLE="$NODESPLAT_OUTPUT_ROOT/$NODESPLAT_RUN_ID/console.txt"
+  mkdir -p "$(dirname "$CONSOLE")" 2>/dev/null || CONSOLE=""
+fi
+say() { echo "[nodesplat] $*"; [[ -z "$CONSOLE" ]] || echo "[nodesplat] $*" >> "$CONSOLE" 2>/dev/null || true; }
+
 MODE=${NODESPLAT_RUN_MODE:-container}
 case "$MODE" in container|host) ;; *) fail "NODESPLAT_RUN_MODE must be container or host" ;; esac
 
@@ -45,15 +54,22 @@ IMAGE=${NODESPLAT_IMAGE:-docker://ghcr.io/in-for-disaster-analytics/opensplat-ls
 
 CACHE=${NODESPLAT_SIF_CACHE_DIR:-${SCRATCH:-$_tapisJobWorkingDir}/nodesplat/sifs}
 mkdir -p "$CACHE"
+# Apptainer's own download cache and temp space default to $HOME, whose quota is small on LS6 and cannot hold a
+# multi-GB image. Keep both next to the SIF, on the same (scratch) filesystem.
+export APPTAINER_CACHEDIR="${APPTAINER_CACHEDIR:-$CACHE/.apptainer-cache}"
+export APPTAINER_TMPDIR="${APPTAINER_TMPDIR:-$CACHE/.apptainer-tmp}"
+mkdir -p "$APPTAINER_CACHEDIR" "$APPTAINER_TMPDIR"
 SIF="$CACHE/nodesplat-$(printf '%s' "$IMAGE" | sha256sum | cut -c1-16).sif"
 # A digest-pinned reference never changes, so a cached copy is always right. A moving tag is re-pulled
 # only when asked (NODESPLAT_REFRESH_SIF=1), so routine runs do not pay the multi-GB pull each time.
 if [[ ! -s "$SIF" || ( "$IMAGE" != *@sha256:* && "${NODESPLAT_REFRESH_SIF:-0}" == "1" ) ]]; then
   PULL_TMP="$CACHE/.$(basename "$SIF").$_tapisJobUUID.tmp"
-  echo "[nodesplat] pulling $IMAGE"
-  apptainer pull --force "$PULL_TMP" "$IMAGE" || { rm -f -- "$PULL_TMP"; fail "failed to pull $IMAGE"; }
-  [[ -s "$PULL_TMP" ]] || fail "pull produced an empty image"
+  say "pulling the runtime image $IMAGE (first run on this cache; this can take several minutes)"
+  apptainer pull --force "$PULL_TMP" "$IMAGE" || { rm -f -- "$PULL_TMP"; say "ERROR: failed to pull $IMAGE"; fail "failed to pull $IMAGE"; }
+  [[ -s "$PULL_TMP" ]] || { say "ERROR: the pull produced an empty image"; fail "pull produced an empty image"; }
   mv -f -- "$PULL_TMP" "$SIF"
+  rm -rf -- "$APPTAINER_TMPDIR"/* 2>/dev/null || true
+  say "runtime image ready"
 fi
 IMAGE_SHA256=$(sha256sum -- "$SIF" | awk '{print $1}')
 
@@ -69,5 +85,5 @@ BINDS=(--bind "$_tapisJobWorkingDir:$_tapisJobWorkingDir:rw")
 [[ -n "${NODESPLAT_OUTPUT_ROOT:-}" ]] && BINDS+=(--bind "$NODESPLAT_OUTPUT_ROOT:$NODESPLAT_OUTPUT_ROOT:rw")
 case "$NODESPLAT_WORK_ROOT/" in "$_tapisJobWorkingDir"/*) ;; *) BINDS+=(--bind "$NODESPLAT_WORK_ROOT:$NODESPLAT_WORK_ROOT:rw") ;; esac
 
-echo "[nodesplat] starting the worker in $IMAGE (sha256 ${IMAGE_SHA256:0:12})"
+say "starting the worker in $IMAGE (sha256 ${IMAGE_SHA256:0:12})"
 exec apptainer exec --nv --cleanenv --containall --no-home "${BINDS[@]}" "$SIF" /opt/node/bin/node /opt/nodesplat/NodeSplat/index.js
