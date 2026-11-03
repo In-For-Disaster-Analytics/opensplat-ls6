@@ -53,6 +53,22 @@ test('container mode is explicit, validated, and reaches the launcher environmen
     assert.throws(() => load({...f.config.env, NODESPLAT_IMAGE_SHA256: 'xyz'}), /IMAGE_SHA256/);
 });
 
+test('console lines written by the entry script before the worker starts are kept and followed', async () => {
+    const f = fixture('echo "after worker start"; exit 1');
+    const consoleFile = path.join(f.dirs.output, RUN, 'console.txt');
+    fs.mkdirSync(path.dirname(consoleFile), {recursive: true, mode: 0o700});
+    fs.writeFileSync(consoleFile, '[nodesplat] pulling the runtime image docker://x\n[nodesplat] runtime image ready\n', {mode: 0o600});
+    const s = await serve(f);
+    try {
+        await s.call('/task/new', {method: 'POST', body: f.body});
+        await s.task.done;
+        const lines = s.task.output(0);
+        assert.equal(lines[0], '[nodesplat] pulling the runtime image docker://x');
+        assert.equal(lines[1], '[nodesplat] runtime image ready');
+        assert.ok(lines.some(line => /after worker start/.test(line)));
+    } finally { s.close(); }
+});
+
 test('API requires the worker capability and advertises the fixed profile', async () => {
     const f = fixture('exit 0');
     const s = await serve(f);

@@ -240,7 +240,10 @@ directly, because Apptainer cannot nest. Batch behaviour (`OPENSPLAT_IN_CONTAINE
   `ghcr.io/in-for-disaster-analytics/opensplat-ls6:cuda` from `publish-images.yml` to exist.
 - `NODESPLAT_IMAGE` (docker:// reference; pin `@sha256:` for a fixed runtime), `NODESPLAT_SIF_CACHE_DIR` and
   `NODESPLAT_REFRESH_SIF=1` (re-pull a moving tag) control the image and cache. The first pull converts a
-  multi-GB image: pre-warm the cache on a login node, and give the job enough `maxMinutes`.
+  multi-GB image. **No manual step is required:** the job pulls the image itself when the cache is empty, keeps
+  Apptainer's download cache and temp files next to the SIF (not in `$HOME`), and writes its progress to the run's
+  console. Pre-warming the cache on a login node is optional; it only saves job time. Give the first job enough
+  `maxMinutes` for the pull.
 - The provenance manifest records the image reference and SHA-256 of the image the job ran in.
 
 **Fallback: `NODESPLAT_RUN_MODE=host`** runs the worker from the ZIP with a Node.js >= 22 binary on the host

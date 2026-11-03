@@ -34,9 +34,11 @@ RUN set -eux; \
     rm -f "${f}"; \
     /opt/node/bin/node --version
 
-# The same preparation stack as images/Dockerfile.prepare (pins must stay in step with it).
+# The same preparation stack as images/Dockerfile.prepare (pins must stay in step with it). That image starts
+# from mambaorg/micromamba, which already has a base environment to install into; this one starts from the CUDA
+# image, so the environment is created.
 COPY --from=micromamba /bin/micromamba /usr/local/bin/micromamba
-RUN micromamba install -y -p /opt/conda -c conda-forge \
+RUN micromamba create -y -p /opt/conda -c conda-forge \
         python=3.11 pdal=2.8 numpy=1.26.4 pillow=11.3.0 \
     && micromamba clean --all --yes \
     && /opt/conda/bin/pdal --version \
